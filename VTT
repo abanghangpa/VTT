@@ -1,0 +1,4028 @@
+//@version=6
+indicator("MT Structure Visualizer [MTF FVG v16 - Unified Pro - CLEAN]", "VTT", true, 
+         max_lines_count=500, max_labels_count=500, max_boxes_count=300, max_bars_back=5000)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 1. INPUT CONFIGURATION - ORGANIZED
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// ---- Debug Settings ----
+debugMode = input.bool(false, "🐛 Debug Mode", group="Debug Settings")
+showTradeDebug = input.bool(true, "🐛 Trade Signal Debug", group="Debug Settings")
+
+// ---- FVG Settings ----
+showFVG = input.bool(true, "🔄 FVG Settings", group="FVG Settings")
+fvgLookback = input.int(5, "FVG Lookback", minval=1, maxval=50, group="FVG Settings")
+maxFVGBoxes = input.int(10, "Max FVG Boxes", minval=5, maxval=100, group="FVG Settings")
+fvgInvalidationPercent = input.float(0.8, "FVG Invalidation %", step=0.1, minval=0.1, maxval=5.0, group="FVG Settings") / 100
+fvgMinSizeATR = input.float(0.005, "FVG Min Size (ATR Ratio)", minval=0.001, maxval=1.0, step=0.001, group="FVG Settings")
+
+// ---- ATR Settings ----
+showATRInfo = input.bool(true, "📊 ATR Settings", group="ATR Settings")
+atrLength = input.int(14, "ATR Length", minval=5, maxval=50, group="ATR Settings")
+atrMultiplier = input.float(0.05, "ATR Multiplier", minval=0.001, maxval=20.0, step=0.001, group="ATR Settings")
+
+// ---- Swing Settings ----
+leftBars = input.int(3, "Swing Left Bars", minval=1, maxval=10, group="Swing Settings")
+rightBars = input.int(3, "Swing Right Bars", minval=1, maxval=10, group="Swing Settings")
+
+// ---- Timeframe Settings ----
+biasHTF = input.timeframe("60", "HTF Bias Timeframe", group="Timeframe Settings")
+execTF = input.timeframe("15", "Execution Timeframe", group="Timeframe Settings")
+bosTF = input.timeframe("240", "BOS/CHoCH Timeframe", group="Timeframe Settings")
+
+// ---- Liquidity Settings ----
+showLiquidity = input.bool(true, "💧 Liquidity Settings", group="Liquidity Settings")
+showLiquidityZones = input.bool(true, "Show Liquidity Zones", group="Liquidity Settings")
+liqZoneOpacity = input.int(50, "Zone Opacity %", minval=10, maxval=90, group="Liquidity Settings") / 100
+liqLookback = input.int(30, "Liquidity Lookback", minval=10, maxval=200, group="Liquidity Settings")
+volumeBins = input.int(15, "Volume Profile Bins", minval=5, maxval=50, group="Liquidity Settings")
+topZones = input.int(2, "Top Volume Zones", minval=1, maxval=3, group="Liquidity Settings")
+
+// ---- Breakout Settings ----
+showBOS = input.bool(true, "🎯 Breakout/Sweep", group="Breakout Settings")
+showSweeps = input.bool(true, "Show Liquidity Sweeps", group="Breakout Settings")
+bosConfirmationBars = input.int(2, "BOS Confirmation Bars", minval=1, maxval=5, group="Breakout Settings")
+sweepThreshold = input.float(0.1, "Sweep Threshold %", step=0.01, minval=0.05, maxval=1.0, group="Breakout Settings") / 100
+
+// ---- Order Flow Settings ----
+showImbalance = input.bool(true, "📊 Show Order Flow Imbalance", group="Order Flow Settings")
+imbalanceLookback = input.int(20, "Imbalance Lookback", minval=5, maxval=50, group="Order Flow Settings")
+minImbalanceRatio = input.float(1.5, "Min Imbalance Ratio", minval=1.2, maxval=3.0, group="Order Flow Settings")
+
+// ---- Risk Management ----
+maxRiskPercent = input.float(1.0, "Max Risk %", step=0.1, minval=0.1, maxval=10.0, group="Risk Management") / 100
+
+// ---- Display Settings ----
+showGrade = input.bool(true, "📈 Display Settings", group="Display Settings")
+showAlerts = input.bool(true, "Enable Alerts", group="Alert Settings")
+
+// ---- Table Visibility Settings ----
+showMainDashboard = input.bool(true, "📊 Main Dashboard", group="Table Visibility")
+showTradingEdge = input.bool(false, "🎯 Trading Edge Table", group="Table Visibility")
+showLevelsMonitor = input.bool(false, "📈 Levels Monitor", group="Table Visibility")
+showFVGMonitor = input.bool(false, "🔄 FVG Monitor", group="Table Visibility")
+showMarketContext = input.bool(false, "🌐 Market Context", group="Table Visibility")
+showRiskManager = input.bool(false, "🛡️ Risk Manager", group="Table Visibility")
+// ---- Exhaustion Settings ----
+showExhaustion = input.bool(true, "🔄 Exhaustion Detection", group="Exhaustion Settings")
+minExhaustionStrength = input.int(3, "Min Exhaustion Signals", minval=2, maxval=6, group="Exhaustion Settings")
+exhaustionLookback = input.int(15, "Exhaustion Lookback", minval=8, maxval=30, group="Exhaustion Settings")
+
+// ---- Enhanced Price Action Settings ----
+enablePriceAction = input.bool(true, "🎯 Enable Enhanced Price Action", group="Price Action Settings")
+paLookback = input.int(400, "Price Action Lookback", minval=50, maxval=1000, group="Price Action Settings")
+minTouchCount = input.int(3, "Min Touches for Critical Level", minval=2, maxval=6, group="Price Action Settings")
+volumeConfirmation = input.bool(true, "Volume Confirmation", group="Price Action Settings")
+
+// ---- AI Settings ----
+learningEnabled = input.bool(true, "Enable Adaptive Learning", group="AI Settings")
+retrainInterval = input.int(100, "Retrain Every N Bars", minval=50, maxval=500, group="AI Settings")
+lookbackPeriod = input.int(100, "Lookback Period", minval=50, maxval=200, group="AI Settings")
+
+// Table declarations
+var table mainDashboard = showMainDashboard ? table.new(position.top_right, 5, 15, border_width=2, bgcolor=color.new(color.black, 90)) : na
+var table tradingEdgeTable = showTradingEdge ? table.new(position.middle_right, 4, 12, border_width=2, bgcolor=color.new(color.purple, 95)) : na
+var table levelsMonitorTable = showLevelsMonitor ? table.new(position.bottom_left, 5, 20, border_width=1, bgcolor=color.new(color.blue, 95)) : na
+var table fvgMonitorTable = showFVGMonitor ? table.new(position.top_center, 5, 15, border_width=1, bgcolor=color.new(color.green, 95)) : na
+var table marketContextTable = showMarketContext ? table.new(position.bottom_right, 4, 10, border_width=1, bgcolor=color.new(color.orange, 95)) : na
+var table riskManagerTable = showRiskManager ? table.new(position.middle_left, 4, 8, border_width=2, bgcolor=color.new(color.red, 95)) : na
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 2. GLOBAL STATE VARIABLES - CLEAN ARCHITECTURE
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// ========== GLOBAL PERFORMANCE METRICS ==========
+var float globalWinRate = 0.0
+var float globalExpectancy = 0.0
+var float globalSharpe = 0.0
+var int globalTotalTrades = 0
+var float globalAvgWin = 0.0
+
+// ========== GLOBAL COMPRESSION CATALYST STATE ==========
+var float globalCatScore = 0.0
+var bool globalExtremeComp = false
+var bool globalHighComp = false
+var bool globalVolumeSpike = false
+var float globalRangeComp = 1.0
+
+// ========== GLOBAL MARKET STATE ==========
+var string globalVolatilityRegime = "NEUTRAL"
+var string globalAdvancedRegime = "NEUTRAL"
+var string globalTrendRegime = "NEUTRAL"
+var float globalCurrentRange = 0.0
+var float globalAvgRange = 0.0
+var float globalAvgVolume20 = 0.0
+
+// ========== GLOBAL AI/TRADING STATE ==========
+var float globalPredictionScore = 0.0
+var int globalMLDirection = 0
+var float globalPositionSize = 0.02
+var float globalBullTarget = na
+var float globalBearTarget = na
+var string globalMarketPhase = "RANGING"
+var bool globalAI_LongEntry = false
+var bool globalAI_ShortEntry = false
+var float globalEntryScore = 0.0
+var bool globalNeedsRetrain = false
+var int globalLastRetrainBar = 0
+
+// ========== GLOBAL TRADE STATE ==========
+var string globalTradeSignal = "NO TRADE"
+var string globalTradeDirection = ""
+var float globalEntryPrice = na
+var float globalStopPrice = na
+var float globalTargetPrice = na
+var string globalTradeReason = ""
+var int globalTradeCreatedBar = 0
+
+// ========== GLOBAL BIAS/CONFIDENCE ==========
+var int globalCombinedBias = 0
+var int globalCachedHTFBias = 0
+var bool globalHighConfidence = false
+var bool globalMediumConfidence = false
+var bool globalLowConfidence = false
+var string globalConfidenceText = ""
+var bool globalMarketReady = false
+var float globalConfirmationScore = 0.0
+
+
+
+// ========== GLOBAL EXHAUSTION STATE ==========
+var bool globalBullishExhaustion = false
+var bool globalBearishExhaustion = false
+var int globalExhaustionScore = 0
+var string globalLastExhaustionType = "NONE"
+var int globalLastExhaustionBar = 0
+
+// ========== GLOBAL FVG STATE ==========
+var int globalActiveBull = 0
+var int globalActiveBear = 0
+
+// ========== GLOBAL COUNTERS ==========
+var int globalSweepCount = 0
+var int globalBosCount = 0
+var int globalStructuralCount = 0
+var int globalEmotionalCount = 0
+
+// ========== GLOBAL TRACKING ==========
+varip float globalTotalTradesCount = 0.0
+varip float globalTotalWins = 0.0
+
+// ========== GLOBAL DISPLAY ==========
+var label globalLastSignalLabel = na
+var string globalFinalGrade = "C"
+
+// ========== GLOBAL ARRAYS ==========
+
+// Breach/Bounce Arrays
+var recentSwingHighs = array.new<float>()
+var recentSwingLows = array.new<float>()
+// Price Action Arrays
+var criticalResistanceLevels = array.new<float>()
+var criticalSupportLevels = array.new<float>()
+var levelTouchCounts = array.new<int>()
+var levelRejectionStrength = array.new<float>()
+var levelVolumeProfile = array.new<float>()
+
+// Target Arrays
+var priceTargets = array.new<float>()
+var targetTypes = array.new<string>()
+var targetStrengths = array.new<float>()
+var targetSources = array.new<string>()
+
+var measuredMoveTargets = array.new<float>()
+var fibExtensionTargets = array.new<float>()
+var volumeWeightedTargets = array.new<float>()
+
+// FVG Arrays
+var fvgBoxes = array.new<box>()
+var fvgActive = array.new<bool>()
+var fvgBullish = array.new<bool>()
+var fvgBars = array.new<int>()
+var fvgHigh = array.new<float>()
+var fvgLow = array.new<float>()
+
+// Zone Arrays
+var allZoneLevels = array.new<float>()
+var allZoneTypes = array.new<string>()
+var allZoneIntents = array.new<string>()
+var allZoneStrength = array.new<float>()
+var allZoneCreationTime = array.new<int>()
+var allZoneBoxes = array.new<box>()
+var zoneGracePeriods = array.new<int>()
+
+// Liquidity Arrays
+var volumeNodes = array.new<float>()
+var highVolumeZones = array.new<float>()
+var lowVolumeZones = array.new<float>()
+var practicalLiquidityTargets = array.new<float>()
+var sweptZones = array.new<float>()
+var sweptTimestamps = array.new<int>()
+
+// Target Arrays
+var activeTargets = array.new<string>()
+var targetLevels = array.new<float>()
+var targetDirections = array.new<string>()
+var targetCreationBars = array.new<int>()
+var targetHitStatus = array.new<bool>()
+
+// Predictive Arrays
+var predictiveLiquidityPools = array.new<float>()
+var predictiveLabels = array.new<label>()
+var expectedMovesLevels = array.new<float>()
+var expectedMovesDirections = array.new<string>()
+var expectedMovesCreationTime = array.new<int>()
+var expectedMovesHitStatus = array.new<bool>()
+var expectedMovesHitTime = array.new<int>()
+var expectedMovesStrength = array.new<int>()
+var expectedMovesLastTouch = array.new<int>()
+
+// Imbalance Arrays
+var imbalanceLevels = array.new<float>()
+var imbalanceDirections = array.new<string>()
+var imbalanceStrengths = array.new<float>()
+var imbalanceBoxes = array.new<box>()
+var imbalanceTypes = array.new<string>()
+var imbalanceProbabilities = array.new<float>()
+var imbalanceCreationTime = array.new<int>()
+var imbalanceActive = array.new<bool>()
+var imbalanceFillTime = array.new<int>()
+var imbalanceFillPrice = array.new<float>()
+var imbalanceLabels = array.new<label>()
+
+// Exhaustion Arrays
+var exhaustionSignals = array.new<string>()
+var exhaustionLevels = array.new<float>()
+var exhaustionDirections = array.new<string>()
+var exhaustionStrengths = array.new<int>()
+var exhaustionTimestamps = array.new<int>()
+var exhaustionBoxes = array.new<box>()
+var exhaustionLabels = array.new<label>()
+
+// Learning Arrays
+var adaptiveWeights = array.new<float>()
+var performanceHistory = array.new<float>()
+var tradeOutcomes = array.new<float>()
+var tradeReturns = array.new<float>()
+
+// Debug Arrays
+var debugLogs = array.new<string>()
+
+// Cache Arrays
+var sweepCountArray = array.new<int>(1, 0)
+var bosCountArray = array.new<int>(1, 0)
+
+// ========== GLOBAL BREACH/BOUNCE STATE ==========
+var float globalLastBreachedLevel = na
+var string globalBounceQuality = "NEUTRAL_BOUNCE"
+var int globalBreachBias = 0
+var int globalBreachBar = 0
+var array<float> globalRetestLevels = array.new<float>()
+var float globalNextBullTarget = na
+var float globalNextBearTarget = na
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 3. UTILITY FUNCTIONS - COMPLETE SET
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Debug system
+debugLog(msg) => 
+    if debugMode
+        array.push(debugLogs, str.tostring(bar_index) + ": " + msg)
+        if array.size(debugLogs) > 24
+            array.remove(debugLogs, 0)
+
+// Array safety functions
+safeSetFloat(arr, int i, float v) => 
+    if i >= 0 and i < array.size(arr)
+        array.set(arr, i, v)
+
+safeSetBool(arr, int i, bool v) => 
+    if i >= 0 and i < array.size(arr)
+        array.set(arr, i, v)
+
+safeSetInt(arr, int i, int v) => 
+    if i >= 0 and i < array.size(arr)
+        array.set(arr, i, v)
+
+safeSetString(arr, int i, string v) => 
+    if i >= 0 and i < array.size(arr)
+        array.set(arr, i, v)
+
+// Safe array access with default value
+safeArrayGet(arr, index, default) =>
+    if na(arr) or array.size(arr) == 0 or index >= array.size(arr) or index < 0
+        default
+    else
+        array.get(arr, index)
+
+// Simplified getters with defaults
+safeGetFloat(arr, int i, float default = na) => 
+    (i >= 0 and i < array.size(arr)) ? array.get(arr, i) : default
+
+safeGetBool(arr, int i, bool default = false) => 
+    (i >= 0 and i < array.size(arr)) ? array.get(arr, i) : default
+
+safeGetInt(arr, int i, int default = 0) => 
+    (i >= 0 and i < array.size(arr)) ? array.get(arr, i) : default
+
+safeGetString(arr, int i, string default = "UNKNOWN") => 
+    if na(arr) or array.size(arr) == 0
+        default
+    else
+        i >= 0 and i < array.size(arr) ? array.get(arr, i) : default
+
+// Specialized getters
+safeGetBox(arr, int i) => (i >= 0 and i < array.size(arr)) ? array.get(arr, i) : na
+safeGetLabel(arr, int i) => (i >= 0 and i < array.size(arr)) ? array.get(arr, i) : na
+
+// Enhanced array operations
+safeSize(arr) => array.size(arr)
+safeRemove(arr, int i) => 
+    if i >= 0 and i < array.size(arr)
+        array.remove(arr, i)
+
+safePush(arr, v) => 
+    if not na(arr)
+        array.push(arr, v)
+
+safeIncludes(arr, v) => (na(arr) or array.size(arr) == 0) ? false : array.includes(arr, v)
+safeIndexOf(arr, v) => (na(arr) or array.size(arr) == 0) ? -1 : array.indexof(arr, v)
+
+swapArrayElements(arr, int i, int j) =>
+    if i < array.size(arr) and j < array.size(arr)
+        temp = array.get(arr, i)
+        array.set(arr, i, array.get(arr, j))
+        array.set(arr, j, temp)
+
+sortZonesByProximity(zones) =>
+    if array.size(zones) > 1
+        int maxSortSize = 20
+        
+        if array.size(zones) > maxSortSize
+            tempArray = array.new<float>()
+            distances = array.new<float>()
+            
+            for i = 0 to array.size(zones) - 1
+                zone = array.get(zones, i)
+                if not na(zone)
+                    float distance = math.abs(close - zone)
+                    array.push(tempArray, zone)
+                    array.push(distances, distance)
+            
+            for i = 0 to array.size(tempArray) - 2
+                for j = i + 1 to array.size(tempArray) - 1
+                    if j < array.size(distances) and array.get(distances, j) < array.get(distances, i)
+                        float tempZone = array.get(tempArray, i)
+                        array.set(tempArray, i, array.get(tempArray, j))
+                        array.set(tempArray, j, tempZone)
+                        
+                        float tempDist = array.get(distances, i)
+                        array.set(distances, i, array.get(distances, j))
+                        array.set(distances, j, tempDist)
+            
+            array.clear(zones)
+            for i = 0 to math.min(maxSortSize - 1, array.size(tempArray) - 1)
+                array.push(zones, array.get(tempArray, i))
+        
+        else
+            for i = 0 to array.size(zones) - 2
+                for j = i + 1 to array.size(zones) - 1
+                    float distI = math.abs(close - array.get(zones, i))
+                    float distJ = math.abs(close - array.get(zones, j))
+                    
+                    if distJ < distI
+                        float temp = array.get(zones, i)
+                        array.set(zones, i, array.get(zones, j))
+                        array.set(zones, j, temp)
+
+// Validation functions
+validateSweepReturn(bool swept, int count) =>
+    bool sweptValid = swept == true or swept == false
+    bool countValid = not na(count) and count >= 0
+    bool valid = sweptValid and countValid
+    if not valid and debugMode
+        debugLog("Invalid sweep return values")
+    valid
+
+validateExhaustionReturn(bool bullish, bool bearish, bool balanced, int score, int count) =>
+    bool valid = (bullish == true or bullish == false) and 
+                 (bearish == true or bearish == false) and 
+                 (balanced == true or balanced == false) and 
+                 not na(score) and not na(count)
+    valid
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 4. CORE TECHNICAL CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// ATR and Volume Calculations
+atrValue = ta.atr(atrLength)
+scaledATR = atrValue * atrMultiplier
+avgVolume = ta.sma(math.min(volume, 10000), 20)
+volumeSpikeLocal = volume > avgVolume * 1.5
+volumeDryupLocal = volume < avgVolume * 0.7
+volumeNormalLocal = not volumeSpikeLocal and not volumeDryupLocal
+
+// RSI
+rsi = ta.rsi(close, 14)
+rsiOversold = rsi < 30
+rsiOverbought = rsi > 70
+rsiNeutral = rsi >= 30 and rsi <= 70
+
+// MACD
+[macdLine, signalLine, hist] = ta.macd(close, 12, 26, 9)
+macdBullish = macdLine > signalLine and hist > hist[1]
+macdBearish = macdLine < signalLine and hist < hist[1]
+macdNeutral = math.abs(hist) < (ta.atr(14) * 0.1)
+
+// 5-minute momentum
+rsi5m = request.security(syminfo.tickerid, "15", ta.rsi(close, 14), barmerge.gaps_off, barmerge.lookahead_off)
+momentum5m = rsi5m > 60 ? 1 : rsi5m < 40 ? -1 : 0
+
+// Dynamic thresholds
+getDynamicThreshold() => atrValue * 0.12
+getDynamicMaxAge() => 100
+shouldProcessBatch() => bar_index % 5 == 0
+
+// FVG Getters with safety
+getFvgActive(i) => safeGetBool(fvgActive, i, false)
+getFvgBullish(i) => safeGetBool(fvgBullish, i)
+getFvgHigh(i) => safeGetFloat(fvgHigh, i)
+getFvgLow(i) => safeGetFloat(fvgLow, i)
+
+// Range calculations (LOCAL - will update globals separately)
+calculateRangeLocal() =>
+    currentRangeLocal = high - low
+    avgRange20Local = ta.sma(high - low, 20)
+    avgRange50Local = ta.sma(high - low, 50)
+    compressionRatioLocal = currentRangeLocal / math.max(avgRange20Local, avgRange50Local * 0.8)
+    [currentRangeLocal, avgRange20Local, avgRange50Local, compressionRatioLocal]
+
+// BOS Detection Function
+detectBOSLocal() =>
+    int bosCount = 0
+    
+    // Get recent swing points
+    recentHigh = ta.highest(high, 20)
+    recentLow = ta.lowest(low, 20)
+    
+    // Previous highs/lows for comparison
+    prevHigh = ta.highest(high, 20)[1]
+    prevLow = ta.lowest(low, 20)[1]
+    
+    // Volume confirmation
+    bool volumeConfirm = volume > ta.sma(volume, 20) * 1.2
+    
+    // Bullish BOS: Close above recent high with volume
+    if close > prevHigh and close > recentHigh * 0.999 and volumeConfirm
+        bosCount += 1
+        if debugMode
+            debugLog("Bullish BOS detected at " + str.tostring(close))
+        
+    // Bearish BOS: Close below recent low with volume  
+    if close < prevLow and close < recentLow * 1.001 and volumeConfirm
+        bosCount += 1
+        if debugMode
+            debugLog("Bearish BOS detected at " + str.tostring(close))
+    
+    bosCount
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 5. VOLATILITY REGIME DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+detectVolatilityRegimeLocal() =>
+    // Multiple volatility measures
+    atrRatio = atrValue / ta.sma(atrValue, 50)
+    rangeRatio = (high - low) / ta.sma(high - low, 20)
+    volumeVolatility = volume / ta.sma(volume, 20)
+    
+    // SIMPLIFIED: Focus on ATR ratio primarily
+    if atrRatio > 1.3
+        "HIGH_VOL_EXPANSION"
+    else if atrRatio > 1.1
+        "MEDIUM_VOL_EXPANSION"
+    else if atrRatio < 0.8
+        "LOW_VOL_CONTRACTION"
+    else
+        // Check range ratio as secondary
+        if rangeRatio > 1.3 or rangeRatio < 0.7
+            "NEUTRAL_TRANSITIONAL"
+        else
+            "NEUTRAL_TRANSITIONAL"
+
+getVolatilityMultiplierLocal() =>
+    regime = detectVolatilityRegimeLocal()
+    regime == "HIGH_VOL_EXPANSION" ? 0.7 : regime == "MEDIUM_VOL_EXPANSION" ? 1.0 : regime == "LOW_VOL_CONTRACTION" ? 1.3 : 1.5
+
+getVolatilityAdjustedStopDistanceLocal() =>
+    regime = detectVolatilityRegimeLocal()
+    baseStop = atrValue * 1.5
+    
+    // Wider stops in high volatility
+    if regime == "HIGH_VOL_EXPANSION"
+        baseStop * 1.3
+    else if regime == "LOW_VOL_CONTRACTION"
+        baseStop * 0.8
+    else
+        baseStop
+
+// Volatility-adaptive features
+calculateVolatilityAdaptiveFeaturesLocal() =>
+    features = array.new<float>()
+    regimeLocal = detectVolatilityRegimeLocal()
+    volMultiplier = getVolatilityMultiplierLocal()
+    
+    // 1. DYNAMIC LOOKBACK PERIODS based on volatility
+    lookback = regimeLocal == "HIGH_VOL_EXPANSION" ? 3 : regimeLocal == "MEDIUM_VOL_EXPANSION" ? 5 : 8
+    
+    // 2. VOLATILITY-NORMALIZED MOMENTUM
+    priceMomentum = (close - close[lookback]) / (atrValue * lookback)
+    
+    // Adjust momentum sensitivity based on volatility
+    momentumWeight = regimeLocal == "HIGH_VOL_EXPANSION" ? 0.12 : regimeLocal == "MEDIUM_VOL_EXPANSION" ? 0.18 : 0.22
+    array.push(features, priceMomentum * momentumWeight)
+    
+    // 3. VOLATILITY REGIME STRENGTH
+    atrZScore = (atrValue - ta.sma(atrValue, 50)) / ta.stdev(atrValue, 50)
+    array.push(features, math.max(-2, math.min(2, atrZScore)) * 0.25)
+    
+    // 4. RANGE EFFICIENCY (how much of range is used)
+    rangeEfficiency = (close - open) / (high - low)
+    // In high vol, focus more on range efficiency
+    rangeWeight = regimeLocal == "HIGH_VOL_EXPANSION" ? 0.2 : 0.15
+    array.push(features, rangeEfficiency * rangeWeight)
+    
+    // 5. VOLUME-VOLATILITY CORRELATION
+    volumeVolCorrelation = volume / ta.sma(volume, 20) * (atrValue / ta.sma(atrValue, 20))
+    array.push(features, math.min(volumeVolCorrelation, 3.0) * 0.15)
+    
+    // 6. MEAN REVERSION PRESSURE (adjusted for volatility)
+    fromMA = (close - ta.sma(close, 20)) / atrValue
+    // Higher weight in low volatility (more mean-reverting)
+    meanRevWeight = regimeLocal == "LOW_VOL_CONTRACTION" ? 0.25 : regimeLocal == "HIGH_VOL_EXPANSION" ? 0.15 : 0.2
+    array.push(features, -fromMA * meanRevWeight)
+    
+    // 7. BREAKOUT POTENTIAL (volatility-adjusted)
+    nearHigh = (ta.highest(high, 10) - close) / atrValue
+    nearLow = (close - ta.lowest(low, 10)) / atrValue
+    // More sensitive to breakouts in low vol
+    breakoutSensitivity = regimeLocal == "LOW_VOL_CONTRACTION" ? 1.5 : 1.0
+    breakoutScore = nearHigh < 2.0 * breakoutSensitivity ? 0.2 : nearLow < 2.0 * breakoutSensitivity ? -0.2 : 0
+    array.push(features, breakoutScore * 0.15)
+    
+    features
+
+// Volatility-adaptive prediction
+getVolatilityThresholdsLocal(regimeInput) =>
+    // FIX: More permissive thresholds in low volatility
+    if regimeInput == "LOW_VOL_CONTRACTION" or regimeInput == "NEUTRAL_TRANSITIONAL"
+        [0.40, 0.60]  // Much more permissive in low vol
+    else if regimeInput == "HIGH_VOL_EXPANSION"
+        [0.55, 0.45]
+    else if regimeInput == "MEDIUM_VOL_EXPANSION"  
+        [0.50, 0.50]
+    else
+        [0.45, 0.55]  // Default to permissive
+
+getVolatilityWeightMultiplierLocal(regimeInput, featureIndex) =>
+    // Feature-specific adjustments based on volatility
+    if regimeInput == "HIGH_VOL_EXPANSION"
+        // In high vol: reduce momentum weight, increase volatility features
+        multiplier = featureIndex == 0 ? 0.8 : featureIndex == 1 ? 1.3 : featureIndex == 2 ? 1.2 : featureIndex == 3 ? 1.1 : 1.0
+    else if regimeInput == "LOW_VOL_CONTRACTION"
+        // In low vol: increase momentum, reduce volatility focus
+        multiplier = featureIndex == 0 ? 1.3 :    // Momentum
+                     featureIndex == 1 ? 0.7 :    // Volatility regime  
+                     featureIndex == 2 ? 1.1 :    // Range efficiency
+                     featureIndex == 3 ? 0.9 :    // Volume-vol correlation
+                     1.0
+    else
+        1.0  // Medium vol - no adjustment
+
+calculateVolatilityAdjustedProbabilityLocal(score, regimeInput) =>
+    // Adjust probability curve steepness based on volatility
+    steepness = regimeInput == "HIGH_VOL_EXPANSION" ? 2.5 : 
+               regimeInput == "LOW_VOL_CONTRACTION" ? 4.0 : 3.0
+    
+    1.0 / (1.0 + math.exp(-score * steepness))
+
+// Add after line 950 (after volatility regime functions)
+
+calculateRegimeConfidenceLocal() =>
+    // How confident are we in the current volatility regime?
+    regime = detectVolatilityRegimeLocal()
+    
+    // Detect regime changes
+    var int lastRegimeChange = na
+    currentRegime = detectVolatilityRegimeLocal()
+    
+    if na(lastRegimeChange)
+        lastRegimeChange := bar_index
+    else
+        previousRegime = currentRegime[1]
+        if currentRegime != previousRegime
+            lastRegimeChange := bar_index
+    
+    regimeDuration = bar_index - lastRegimeChange
+    
+    // Longer regime duration = higher confidence
+    durationConfidence = math.min(regimeDuration / 20.0, 1.0)
+    
+    // Consistency of regime signals
+    recentMatches = 0
+    for i = 1 to 5
+        if i <= bar_index and detectVolatilityRegimeLocal()[i] == regime
+            recentMatches += 1
+    
+    consistencyConfidence = recentMatches / 5.0
+    
+    (durationConfidence * 0.6) + (consistencyConfidence * 0.4)
+
+// Add after line 950 (after volatility regime functions)
+
+// Enhanced feature calculation
+calculateEnhancedFeaturesLocal() =>
+    features = array.new<float>()
+    
+    // 1. PRICE MOMENTUM (improved)
+    momentum5 = (close - close[5]) / (atrValue * 5)
+    momentum10 = (close - close[10]) / (atrValue * 10)
+    priceMomentum = (momentum5 * 0.7) + (momentum10 * 0.3)
+    array.push(features, priceMomentum)
+    
+    // 2. VOLUME STRENGTH (with confirmation)
+    volumeRatio = volume / ta.sma(volume, 20)
+    volumeTrend = ta.sma(volume, 5) / ta.sma(volume, 20)
+    volumeStrength = (volumeRatio * 0.6) + (volumeTrend * 0.4)
+    array.push(features, volumeStrength)
+    
+    // 3. VOLATILITY REGIME (enhanced)
+    atrZScore = (atrValue - ta.sma(atrValue, 50)) / ta.stdev(atrValue, 50)
+    rangeZScore = ((high - low) - ta.sma(high - low, 20)) / ta.stdev(high - low, 20)
+    volRegimeScore = (atrZScore * 0.6) + (rangeZScore * 0.4)
+    array.push(features, math.max(-2, math.min(2, volRegimeScore)) * 0.25)
+    
+    // 4. RSI POSITION (with momentum)
+    rsiScore = (rsi - 50) / 50
+    rsiMomentum = rsi - rsi[3]
+    rsiPosition = (rsiScore * 0.7) + (rsiMomentum * 0.3)
+    array.push(features, rsiPosition)
+    
+    // 5. MARKET STRUCTURE (improved)
+    structureScore = 0.0
+    nearbyZones = 0
+    if array.size(allZoneLevels) > 0
+        for i = 0 to math.min(9, array.size(allZoneLevels) - 1)
+            zone = safeGetFloat(allZoneLevels, i)
+            if not na(zone) and math.abs(close - zone) < atrValue * 1.5
+                nearbyZones := nearbyZones + 1
+    structureScore := math.min(nearbyZones / 5.0, 1.0)
+    array.push(features, structureScore)
+    
+    // 6. MEAN REVERSION (dynamic)
+    fromMA20 = (close - ta.sma(close, 20)) / atrValue
+    fromMA50 = (close - ta.sma(close, 50)) / atrValue
+    meanReversion = (fromMA20 * 0.6) + (fromMA50 * 0.4) * -1
+    array.push(features, meanReversion * 0.2)
+    
+    // 7. BREAKOUT POTENTIAL (enhanced)
+    nearHigh = (ta.highest(high, 10) - close) / atrValue
+    nearLow = (close - ta.lowest(low, 10)) / atrValue
+    consolidationRatio = (ta.highest(high, 10) - ta.lowest(low, 10)) / atrValue
+    breakoutScore = 0.0
+    if consolidationRatio < 1.5
+        breakoutScore := (nearHigh < 1.5 ? 0.3 : nearLow < 1.5 ? -0.3 : 0)
+    array.push(features, breakoutScore)
+    
+    features
+
+calculateEnhancedPredictionScoreLocal() =>
+    // Get enhanced features
+    features = calculateEnhancedFeaturesLocal()
+    
+    // Calculate weighted score
+    score = 0.0
+    totalWeight = 0.0
+    
+    for i = 0 to array.size(features) - 1
+        if i < array.size(adaptiveWeights)
+            feature = array.get(features, i)
+            weight = array.get(adaptiveWeights, i)
+            score := score + (feature * weight)
+            totalWeight := totalWeight + weight
+    
+    // Normalize score
+    normalizedScore = totalWeight > 0 ? score / totalWeight : 0
+    
+    // Convert to probability (0-1)
+    probability = 1.0 / (1.0 + math.exp(-normalizedScore * 3.0))
+    
+    // Get current regime
+    regimeLocal = detectVolatilityRegimeLocal()
+    
+    // Apply volatility-adjusted probability
+    probability := calculateVolatilityAdjustedProbabilityLocal(probability, regimeLocal)
+    
+    // Get adaptive thresholds based on regime
+    [entryThreshold, exitThreshold] = getVolatilityThresholdsLocal(regimeLocal)
+    
+    // Determine direction
+    int direction = 0
+    if probability > entryThreshold
+        direction := 1
+    else if probability < exitThreshold
+        direction := -1
+    
+    // Confidence calculation
+    confidence = math.abs(probability - 0.5) * 2.0
+    
+    [direction, confidence, probability, regimeLocal]
+
+volatilityAdaptivePredictNextMoveLocal() =>
+    // Calculate probability
+    features = calculateEnhancedFeaturesLocal()
+    score = 0.0
+    totalWeight = 0.0
+    
+    for i = 0 to array.size(features) - 1
+        if i < array.size(adaptiveWeights)
+            score := score + (array.get(features, i) * array.get(adaptiveWeights, i))
+            totalWeight := totalWeight + array.get(adaptiveWeights, i)
+    
+    normalizedScore = totalWeight > 0 ? score / totalWeight : 0
+    probability = 1.0 / (1.0 + math.exp(-normalizedScore * 3.0))
+    
+    // Volatility adjustments
+    regimeLocal = detectVolatilityRegimeLocal()
+    probability := calculateVolatilityAdjustedProbabilityLocal(probability, regimeLocal)
+    
+    [entryThreshold, exitThreshold] = getVolatilityThresholdsLocal(regimeLocal)
+    
+    // Direction decision
+    int direction = probability > entryThreshold ? 1 : probability < exitThreshold ? -1 : 0
+    
+    // Confidence
+    confidence = math.abs(probability - 0.5) * 2.0
+    
+    // Win rate penalty (only if really bad)
+    if globalTotalTradesCount > 20 and globalWinRate < 0.35
+        penalty = 0.7 + (globalWinRate * 0.86)  // 35% → 1.0x, 20% → 0.87x, 10% → 0.79x
+        confidence := confidence * math.max(0.5, penalty)
+        
+        if globalWinRate < 0.25
+            direction := 0  // Neutralize if really terrible
+    
+    [direction, confidence, probability, regimeLocal]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 6. MARKET REGIME DETECTION (SINGLE VERSION)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+detectMarketPhaseLocal() =>
+    execClose = request.security(syminfo.tickerid, execTF, close)
+    priceChange = (execClose - execClose[20]) / math.max(execClose[20], syminfo.mintick)
+    volumeSma = ta.sma(volume, 20)
+    
+    // MULTI-FACTOR RANGING DETECTION
+    currentRange = (high - low) / close
+    avgRange = ta.sma(high - low, 20) / close
+    rangeRatio = currentRange / avgRange
+    
+    // Price oscillation (how much price moves around)
+    priceOscillation = (ta.highest(high, 10) - ta.lowest(low, 10)) / close
+    
+    // Volume consistency
+    volumeConsistency = ta.stdev(volume, 10) / volumeSma
+    
+    // ENHANCED RANGING CRITERIA
+    isClearlyRanging = math.abs(priceChange) < 0.012 and rangeRatio < 1.2 and priceOscillation < 0.025 and volumeConsistency < 0.4 and volume < volumeSma * 1.15
+    
+    // IMPROVED PHASE DETECTION WITH LOWER THRESHOLDS
+    if isClearlyRanging
+        "RANGING"
+    else if math.abs(priceChange) < 0.018 and volume < volumeSma * 0.85
+        "ACCUMULATION"
+    else if priceChange > 0.022 and volume > volumeSma * 1.05
+        "MARKUP" 
+    else if math.abs(priceChange) < 0.018 and volume > volumeSma * 0.95
+        "DISTRIBUTION"
+    else if priceChange < -0.022 and volume > volumeSma * 1.05
+        "MARKDOWN"
+    else
+        // SMART FALLBACK: Use multiple factors
+        bool likelyRanging = rangeRatio < 1.4 and volumeConsistency < 0.6
+        bool hasDirection = math.abs(priceChange) > 0.01
+        
+        if likelyRanging and not hasDirection
+            "RANGING"
+        else if priceChange > 0.01
+            "MARKUP"
+        else if priceChange < -0.01
+            "MARKDOWN"
+        else
+            "RANGING"  // Default to ranging when uncertain
+
+detectAdvancedRegimesLocal() =>
+    // Volatility regimes
+    volatilityRegimeLocal = detectVolatilityRegimeLocal()
+    
+    // Trend regimes using ADX
+    [diPlus, diMinus, adx] = ta.dmi(14, 14)
+    trendStrengthLocal = adx / 100.0
+    
+    // FIX: Use consistent regime naming
+    string primaryRegime = "NEUTRAL"
+    
+    // First check volatility regime
+    if volatilityRegimeLocal == "HIGH_VOL_EXPANSION"
+        primaryRegime := "HIGH_VOL_EXPANSION"
+    else if volatilityRegimeLocal == "MEDIUM_VOL_EXPANSION"
+        primaryRegime := "MEDIUM_VOL_EXPANSION"
+    else if volatilityRegimeLocal == "LOW_VOL_CONTRACTION"
+        primaryRegime := "LOW_VOL_CONTRACTION"
+    else if volatilityRegimeLocal == "NEUTRAL_TRANSITIONAL"
+        primaryRegime := "NEUTRAL_TRANSITIONAL"
+    
+    // Override with trend if strong enough
+    if trendStrengthLocal > 0.25
+        if diPlus > diMinus and primaryRegime != "HIGH_VOL_EXPANSION"
+            primaryRegime := "TRENDING_BULL_" + primaryRegime
+        else if diMinus > diPlus and primaryRegime != "HIGH_VOL_EXPANSION"
+            primaryRegime := "TRENDING_BEAR_" + primaryRegime
+    
+    [primaryRegime, trendStrengthLocal, volatilityRegimeLocal]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 7. PERFORMANCE CALCULATION FUNCTIONS (LOCAL)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+calculateExpectedWinRateLocal() =>
+    // Use multiple data sources for win rate calculation
+    float winRateFromHistory = 0.0
+    float winRateFromTrades = 0.0
+    
+    // Method 1: From performanceHistory array
+    int historySize = array.size(performanceHistory)
+    if historySize > 0
+        float sum = 0.0
+        for i = 0 to historySize - 1
+            sum := sum + array.get(performanceHistory, i)
+        winRateFromHistory := sum / historySize
+    
+    // Method 2: From trade outcomes array (recent trades)
+    int recentTrades = array.size(tradeOutcomes)
+    int lookbackTrades = 0  // DECLARE HERE - outside the if block
+    
+    if recentTrades > 0
+        int recentWins = 0
+        lookbackTrades := math.min(50, recentTrades) // Last 50 trades
+        
+        // FIX: Ensure start index is valid
+        startIndex = math.max(0, recentTrades - lookbackTrades)
+        endIndex = recentTrades - 1
+        
+        // Only loop if startIndex <= endIndex AND lookbackTrades > 0
+        if startIndex <= endIndex and lookbackTrades > 0
+            for i = startIndex to endIndex
+                if array.get(tradeOutcomes, i) > 0
+                    recentWins := recentWins + 1
+            winRateFromTrades := recentWins / float(lookbackTrades)
+    
+    // Method 3: From global counters (fallback) - WITH EXTRA SAFETY
+    float winRateFromCounters = 0.0
+    // Use nz() to ensure we don't divide by zero or na
+    float safeTotalTrades = nz(globalTotalTradesCount, 0.0)
+    if safeTotalTrades > 0
+        winRateFromCounters := nz(globalTotalWins, 0.0) / safeTotalTrades
+    
+    // Weighted average with preference for recent performance
+    float finalWinRate = 0.0
+    if recentTrades >= 10 and lookbackTrades > 0  // Now lookbackTrades is available here
+        // Prefer recent trades if we have enough data
+        finalWinRate := (winRateFromTrades * 0.6) + (winRateFromHistory * 0.3) + (winRateFromCounters * 0.1)
+    else if historySize >= 20
+        // Use history if we have sufficient historical data
+        finalWinRate := (winRateFromHistory * 0.7) + (winRateFromCounters * 0.3)
+    else
+        // Fallback to counters
+        finalWinRate := winRateFromCounters
+    
+    // Ensure reasonable bounds
+    finalWinRate := math.max(0.0, math.min(1.0, finalWinRate))
+    
+    finalWinRate
+
+calculateCurrentWinRateLocal() =>
+    if bar_index < 50  // Need enough data
+        0.5
+    else
+        correct = 0
+        total = 0
+        
+        // Look at last 100 bars (but not too recent)
+        lookback = math.min(100, bar_index - 10)
+        
+        for i = 10 to lookback
+            // SAFETY CHECK: Ensure we have enough historical data
+            if i + 5 <= bar_index
+                // Calculate what ACTUALLY happened (5-bar forward move)
+                startPrice = close[i]
+                endPrice = close[i+5]
+                priceChange = endPrice - startPrice
+                moveSize = math.abs(priceChange) / atrValue[i]
+                
+                // Only count significant moves (> 0.5 ATR)
+                if moveSize > 0.5
+                    actualDirection = priceChange > 0 ? 1 : -1
+                    
+                    // Calculate what model WOULD HAVE PREDICTED at time [i]
+                    // Use simple momentum as proxy for model prediction
+                    pastMomentum = (close[i] - close[i-3]) / (atrValue[i] * 3.0)
+                    predictedDirection = pastMomentum > 0.1 ? 1 : pastMomentum < -0.1 ? -1 : 0
+                    
+                    // Count as correct if prediction matches actual (and not neutral)
+                    if predictedDirection == actualDirection and predictedDirection != 0
+                        correct += 1
+                    
+                    total += 1
+        
+        // Return win rate with minimum 30% floor
+        winRateLocal = total > 10 ? correct / float(total) : 0.5
+        math.max(0.3, math.min(0.8, winRateLocal))
+
+calculateTradingEdgeLocal() =>
+    // --- Retrieve Performance from Stored Arrays ---
+    float[] returns = tradeReturns // Array of trade return percentage
+    
+    // --- Initialize Return Variables ---
+    float winRateLocal = 0.0
+    float expectancyLocal = 0.0
+    float sharpeLocal = 0.0
+    int totalTradesLocal = 0
+    float avgReturnLocal = 0.0
+    float volatilityLocal = 0.0
+
+    // Safety Check - Only proceed if there is data in the returns array
+    if array.size(returns) > 0
+        
+        // --- Restrict lookback ---
+        int lookback = 1000
+        // Use the returns array size for consistency
+        int startIndex = math.max(0, array.size(returns) - lookback)
+        
+        // Create a new array containing ONLY the returns within the lookback window
+        float[] lookbackReturns = array.new_float(0)
+        
+        // Loop from startIndex up to the last element of the returns array
+        for i = startIndex to array.size(returns) - 1
+            array.push(lookbackReturns, array.get(returns, i))
+        
+        // --- EDGE METRICS CALCULATION ---
+        
+        totalTradesLocal := array.size(lookbackReturns)
+        
+        float sumReturns = 0.0
+        int winningTrades = 0
+        int losingTrades = 0
+        float sumWinningReturns = 0.0
+        float sumLosingReturns = 0.0 // Stored as negative
+        
+        // 1. Calculate Sums, Winning/Losing Trades, and Avg Return
+        for i = 0 to totalTradesLocal - 1
+            float currentReturn = array.get(lookbackReturns, i)
+            sumReturns += currentReturn
+            
+            if currentReturn > 0
+                winningTrades += 1
+                sumWinningReturns += currentReturn
+            else if currentReturn < 0
+                losingTrades += 1
+                sumLosingReturns += currentReturn
+        
+        // Calculate total average return before other metrics
+        avgReturnLocal := sumReturns / float(totalTradesLocal)
+        
+        // 2. Win Rate
+        winRateLocal := winningTrades / float(totalTradesLocal)
+        
+        // 3. Average Win/Loss for Expectancy
+        float avgWinLocal = winningTrades > 0 ? sumWinningReturns / float(winningTrades) : 0.0
+        float avgLossLocal = losingTrades > 0 ? math.abs(sumLosingReturns / float(losingTrades)) : 0.0
+        
+        // 4. Expectancy (Risk-Adjusted Expectancy)
+        expectancyLocal := (winRateLocal * avgWinLocal) - ((1 - winRateLocal) * avgLossLocal)
+        
+        // 5. Volatility (Standard Deviation of Returns)
+        if totalTradesLocal > 1
+            float squaredDifferences = 0.0
+            
+            for i = 0 to totalTradesLocal - 1
+                float diff = array.get(lookbackReturns, i) - avgReturnLocal
+                squaredDifferences += diff * diff
+                
+            volatilityLocal := math.sqrt(squaredDifferences / float(totalTradesLocal - 1))
+        
+        // 6. Sharpe Ratio
+        sharpeLocal := volatilityLocal > 0 ? avgReturnLocal / volatilityLocal : 0.0
+        
+    // --- FINAL RETURN ---
+    [winRateLocal, expectancyLocal, sharpeLocal, totalTradesLocal, avgReturnLocal]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 8. COMPRESSION CATALYST SYSTEM (LOCAL)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+getCompressionCatalystScoreLocal() =>
+    // 1. VOLATILITY COMPRESSION (40%)
+    rangeCurrentLocal = high - low
+    avgRangeLocal = ta.sma(high - low, 20)
+    
+    // Prevent division by zero
+    if avgRangeLocal <= 0
+        avgRangeLocal := syminfo.mintick * 100  // Minimum value
+    
+    rangeCompressionLocal = rangeCurrentLocal / avgRangeLocal
+    
+    bool extremeCompLocal = rangeCompressionLocal < 0.6
+    bool highCompLocal = rangeCompressionLocal < 0.8 and not extremeCompLocal
+    
+    compressionScore = extremeCompLocal ? 40 : highCompLocal ? 30 : rangeCompressionLocal <= 1.2 ? 15 : 5
+    
+    // 2. VOLUME CONFIRMATION (30%)
+    avgVolume20Local = ta.sma(volume, 20)
+    volumeRatio = avgVolume20Local > 0 ? volume / avgVolume20Local : 1.0
+    
+    bool volumeDryupCatalyst = volumeRatio < 0.7
+    bool volumeSpikeCatalyst = volumeRatio > 1.3
+    
+    volumeScore = volumeDryupCatalyst and (extremeCompLocal or highCompLocal) ? 20 : 
+                  volumeSpikeCatalyst and (extremeCompLocal or highCompLocal) ? 30 : 10
+    
+    // 3. FVG ALIGNMENT (20%)
+    fvgCompressionScore = 0
+    if array.size(fvgBoxes) > 0
+        for i = 0 to array.size(fvgBoxes) - 1
+            if getFvgActive(i)
+                fvgLevel = getFvgBullish(i) ? getFvgLow(i) : getFvgHigh(i)
+                distance = math.abs(close - fvgLevel)
+                atrVal = math.max(atrValue, syminfo.mintick * 100)
+                distanceATR = distance / atrVal
+                if distanceATR < 2.0
+                    fvgCompressionScore := fvgCompressionScore + 10
+    fvgCompressionScore := math.min(fvgCompressionScore, 20)
+    
+    // 4. TIME COMPRESSION (10%)
+    barsSinceBigMove = 0
+    for i = 1 to 20
+        if i <= bar_index and (high[i] - low[i]) > atrValue * 1.5
+            barsSinceBigMove := i
+            break
+    
+    timeScore = barsSinceBigMove > 15 ? 10 : 
+               barsSinceBigMove > 10 ? 8 : 
+               barsSinceBigMove > 5 ? 5 : 2
+    
+    // TOTAL CATALYST SCORE (0-100)
+    totalScore = compressionScore + volumeScore + fvgCompressionScore + timeScore
+    
+    [totalScore, extremeCompLocal, highCompLocal, volumeSpikeCatalyst, rangeCompressionLocal]
+
+enhanceTradeWithCompressionLocal(predictionScoreInput, positionSizeInput, bullTargetInput, bearTargetInput) =>
+    [catalystScoreLocal, extremeCompLocal, highCompLocal, volumeSpikeCatalyst, rangeCompLocal] = getCompressionCatalystScoreLocal()
+
+    // A. BOOST PREDICTION SCORE
+    boostMultiplier = 1.0
+    if extremeCompLocal and volumeSpikeLocal
+        boostMultiplier := 1.5  // 50% boost - EXTREME SETUP
+    else if highCompLocal and volumeSpikeLocal
+        boostMultiplier := 1.3  // 30% boost
+    else if extremeCompLocal
+        boostMultiplier := 1.25  // 25% boost
+    else if highCompLocal
+        boostMultiplier := 1.15  // 15% boost
+    
+    // B. ADJUST POSITION SIZE
+    positionMultiplier = 1.0
+    if catalystScoreLocal > 80
+        positionMultiplier := 2.0  // Double size - RARE HIGH CONVICTION
+    else if catalystScoreLocal > 70
+        positionMultiplier := 1.5  // 50% larger
+    else if catalystScoreLocal > 60
+        positionMultiplier := 1.2  // 20% larger
+    
+    // C. ADJUST TARGETS
+    targetMultiplier = 1.0
+    if extremeCompLocal
+        targetMultiplier := 1.8  // 80% larger targets
+    else if highCompLocal
+        targetMultiplier := 1.4  // 40% larger targets
+    
+    // D. FILTER LOW-QUALITY SETUPS
+    bool shouldTrade = catalystScoreLocal > 50 or (predictionScoreInput > 0.7 and highCompLocal)
+    
+    // Apply multipliers
+    enhancedPredictionScore = predictionScoreInput * boostMultiplier
+    enhancedPositionSize = positionSizeInput * positionMultiplier
+    enhancedBullTarget = not na(bullTargetInput) ? bullTargetInput * targetMultiplier : na
+    enhancedBearTarget = not na(bearTargetInput) ? bearTargetInput * targetMultiplier : na
+    
+    [enhancedPredictionScore, enhancedPositionSize, enhancedBullTarget, enhancedBearTarget, 
+     shouldTrade, catalystScoreLocal, extremeCompLocal, highCompLocal, volumeSpikeLocal, rangeCompLocal]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 9. PRICE ACTION FUNCTIONS (LOCAL)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+detectCriticalLevelsLocal() =>
+    // Initialize arrays if empty
+    if array.size(criticalResistanceLevels) == 0
+        array.clear(criticalResistanceLevels)
+        array.clear(criticalSupportLevels)
+        array.clear(levelTouchCounts)
+        array.clear(levelRejectionStrength)
+        array.clear(levelVolumeProfile)
+    
+    // SIMPLIFIED: Just clear old arrays periodically instead of complex copying
+    if bar_index % 100 == 0 and bar_index > 50
+        // Clear and let them repopulate - much simpler
+        array.clear(criticalResistanceLevels)
+        array.clear(criticalSupportLevels)
+        array.clear(levelTouchCounts)
+        array.clear(levelRejectionStrength)
+        array.clear(levelVolumeProfile)
+    
+    // SIMPLIFIED: Detect resistance levels
+    for i = 2 to math.min(paLookback, bar_index)
+        // Basic swing high detection
+        if high[i] >= ta.highest(high, 3)[i] and high[i] > high[i-1] and high[i] > high[i+1]
+            level = high[i]
+            tolerance = atrValue * 0.08
+            
+            // Check if level exists
+            foundExisting = false
+            if array.size(criticalResistanceLevels) > 0
+                for j = 0 to array.size(criticalResistanceLevels) - 1
+                    if j < array.size(criticalResistanceLevels) and math.abs(array.get(criticalResistanceLevels, j) - level) <= tolerance
+                        // Update existing level
+                        if j < array.size(levelTouchCounts)
+                            newCount = array.get(levelTouchCounts, j) + 1
+                            array.set(levelTouchCounts, j, newCount)
+                        foundExisting := true
+                        break
+            
+            // Add new level if not found
+            if not foundExisting
+                array.push(criticalResistanceLevels, level)
+                array.push(levelTouchCounts, 1)
+                wickStrength = (high[i] - math.max(open[i], close[i])) / (high[i] - low[i])
+                array.push(levelRejectionStrength, wickStrength)
+                array.push(levelVolumeProfile, volume[i])
+    
+    // SIMPLIFIED: Detect support levels  
+    for i = 2 to math.min(paLookback, bar_index)
+        // Basic swing low detection
+        if low[i] <= ta.lowest(low, 3)[i] and low[i] < low[i-1] and low[i] < low[i+1]
+            level = low[i]
+            tolerance = atrValue * 0.08
+            
+            // Check if level exists
+            foundExisting = false
+            if array.size(criticalSupportLevels) > 0
+                for j = 0 to array.size(criticalSupportLevels) - 1
+                    if j < array.size(criticalSupportLevels) and math.abs(array.get(criticalSupportLevels, j) - level) <= tolerance
+                        // Update existing level
+                        totalIndex = array.size(criticalResistanceLevels) + j
+                        if totalIndex < array.size(levelTouchCounts)
+                            newCount = array.get(levelTouchCounts, totalIndex) + 1
+                            array.set(levelTouchCounts, totalIndex, newCount)
+                        foundExisting := true
+                        break
+            
+            // Add new level if not found
+            if not foundExisting
+                array.push(criticalSupportLevels, level)
+                array.push(levelTouchCounts, 1)
+                wickStrength = (math.min(open[i], close[i]) - low[i]) / (high[i] - low[i])
+                array.push(levelRejectionStrength, wickStrength)
+                array.push(levelVolumeProfile, volume[i])
+
+assessLevelStrengthLocal(level, isResistance) =>
+    if na(level)
+        0.0
+    else
+        strength = 0.0
+        touchCount = 0
+        rejectionPower = 0.0
+        volumeStrength = 0.0
+        
+        // Base strength from proximity
+        distance = math.abs(close - level)
+        proximityStrength = math.max(0, 1.0 - (distance / (atrValue * 3.0)))
+        
+        if isResistance and array.size(criticalResistanceLevels) > 0
+            for i = 0 to array.size(criticalResistanceLevels) - 1
+                if i < array.size(criticalResistanceLevels) and 
+                   math.abs(array.get(criticalResistanceLevels, i) - level) <= atrValue * 0.05
+                    
+                    if i < array.size(levelTouchCounts)
+                        touchCount := array.get(levelTouchCounts, i)
+                    if i < array.size(levelRejectionStrength)
+                        rejectionPower := array.get(levelRejectionStrength, i)
+                    if i < array.size(levelVolumeProfile)
+                        volumeStrength := math.min(array.get(levelVolumeProfile, i) / math.max(ta.sma(volume, 20), 1), 2.0)
+                    break
+        else if not isResistance and array.size(criticalSupportLevels) > 0
+            for i = 0 to array.size(criticalSupportLevels) - 1
+                if i < array.size(criticalSupportLevels) and 
+                   math.abs(array.get(criticalSupportLevels, i) - level) <= atrValue * 0.05
+                    
+                    resistanceSize = array.size(criticalResistanceLevels)
+                    totalIndex = resistanceSize + i
+                    
+                    if totalIndex < array.size(levelTouchCounts)
+                        touchCount := array.get(levelTouchCounts, totalIndex)
+                    if totalIndex < array.size(levelRejectionStrength)
+                        rejectionPower := array.get(levelRejectionStrength, totalIndex)
+                    if totalIndex < array.size(levelVolumeProfile)
+                        volumeStrength := math.min(array.get(levelVolumeProfile, totalIndex) / math.max(ta.sma(volume, 20), 1), 2.0)
+                    break
+        
+        // Calculate composite strength with fallbacks
+        touchStrength = touchCount > 0 ? math.min(touchCount / 3.0, 1.0) : 0.5
+        rejectionStrength = rejectionPower > 0 ? rejectionPower * 2.0 : 0.5
+        volumeStrength := volumeStrength > 0 ? volumeStrength : 0.5
+        
+        strength := (touchStrength * 0.3) + (rejectionStrength * 0.3) + (volumeStrength * 0.2) + (proximityStrength * 0.2)
+        math.max(0.1, math.min(1.0, strength))
+
+getNearestCriticalLevelsLocal() =>
+    float nearestResistance = na
+    float nearestSupport = na
+    
+    // Find nearest resistance WITH COMPREHENSIVE BOUNDS CHECKING
+    if array.size(criticalResistanceLevels) > 0
+        for i = 0 to array.size(criticalResistanceLevels) - 1
+            if i < array.size(criticalResistanceLevels)
+                level = array.get(criticalResistanceLevels, i)
+                if not na(level) and level > close and (na(nearestResistance) or level < nearestResistance)
+                    nearestResistance := level
+    
+    // Find nearest support WITH COMPREHENSIVE BOUNDS CHECKING
+    if array.size(criticalSupportLevels) > 0
+        for i = 0 to array.size(criticalSupportLevels) - 1
+            if i < array.size(criticalSupportLevels)
+                level = array.get(criticalSupportLevels, i)
+                if not na(level) and level < close and (na(nearestSupport) or level > nearestSupport)
+                    nearestSupport := level
+    
+    [nearestSupport, nearestResistance]
+
+getCurrentMomentumLocal() =>
+    rsiMomentum = rsi > 60 ? "BULLISH" : rsi < 40 ? "BEARISH" : "NEUTRAL"
+    priceMomentum = close > ta.ema(close, 20) ? "BULLISH" : close < ta.ema(close, 20) ? "BEARISH" : "NEUTRAL"
+    macdMomentum = macdLine > signalLine ? "BULLISH" : "BEARISH"
+    
+    bullSignals = 0
+    bearSignals = 0
+    
+    bullSignals := bullSignals + (rsiMomentum == "BULLISH" ? 1 : 0)
+    bullSignals := bullSignals + (priceMomentum == "BULLISH" ? 1 : 0) 
+    bullSignals := bullSignals + (macdMomentum == "BULLISH" ? 1 : 0)
+    
+    bearSignals := bearSignals + (rsiMomentum == "BEARISH" ? 1 : 0)
+    bearSignals := bearSignals + (priceMomentum == "BEARISH" ? 1 : 0)
+    bearSignals := bearSignals + (macdMomentum == "BEARISH" ? 1 : 0)
+    
+    if bullSignals >= 2
+        "BULLISH"
+    else if bearSignals >= 2
+        "BEARISH" 
+    else
+        "NEUTRAL"
+
+getMarketContextLocal() =>
+    atrRatio = atrValue / ta.sma(atrValue, 50)
+    volatility = atrRatio > 1.3 ? "HIGH_VOL" : atrRatio < 0.7 ? "LOW_VOL" : "NORMAL_VOL"
+    
+    trendStrength = math.abs(close - ta.sma(close, 20)) / atrValue
+    trend = trendStrength > 1.5 ? "TRENDING" : trendStrength < 0.5 ? "RANGING" : "MILD_TREND"
+    
+    volatility + "_" + trend
+
+getPriceActionPredictionLocal() =>
+    [nearestSupport, nearestResistance] = getNearestCriticalLevelsLocal()
+    currentMomentum = getCurrentMomentumLocal()
+    marketContext = getMarketContextLocal()
+    
+    string prediction = "NO_CLEAR_SETUP"
+    string direction = "NEUTRAL"
+    float confidence = 0.0
+
+    // DEBUG: Check what levels we found
+    if debugMode
+        debugLog("PA Levels - Support: " + str.tostring(nearestSupport) + " | Resistance: " + str.tostring(nearestResistance))
+    
+    bool hasValidResistance = not na(nearestResistance) and nearestResistance > 0
+    bool hasValidSupport = not na(nearestSupport) and nearestSupport > 0
+    
+    if hasValidResistance and hasValidSupport
+        resistanceStrength = assessLevelStrengthLocal(nearestResistance, true)
+        supportStrength = assessLevelStrengthLocal(nearestSupport, false)
+        
+        distanceToResistance = (nearestResistance - close) / atrValue
+        distanceToSupport = (close - nearestSupport) / atrValue
+        
+        // DEBUG: Strength assessment
+        if debugMode
+            debugLog("PA Strength - R: " + str.tostring(resistanceStrength) + " | S: " + str.tostring(supportStrength))
+        
+        // Price action based predictions
+        if currentMomentum == "BULLISH" and distanceToResistance <= 2.0
+            prediction := "APPROACHING_RESISTANCE: " + str.tostring(nearestResistance, "#.####")
+            direction := "SHORT_SETUP"
+            confidence := resistanceStrength * (1.0 - (distanceToResistance / 4.0))
+            
+        else if currentMomentum == "BEARISH" and distanceToSupport <= 2.0
+            prediction := "APPROACHING_SUPPORT: " + str.tostring(nearestSupport, "#.####")
+            direction := "LONG_SETUP" 
+            confidence := supportStrength * (1.0 - (distanceToSupport / 4.0))
+            
+        else if math.abs(close - nearestResistance) <= atrValue * 0.1
+            prediction := "AT_RESISTANCE: " + str.tostring(nearestResistance, "#.####")
+            direction := "SHORT_SETUP"
+            confidence := resistanceStrength * 0.8
+            
+        else if math.abs(close - nearestSupport) <= atrValue * 0.1
+            prediction := "AT_SUPPORT: " + str.tostring(nearestSupport, "#.####")
+            direction := "LONG_SETUP"
+            confidence := supportStrength * 0.8
+            
+        else
+            prediction := "RANGING: " + str.tostring(nearestSupport, "#.####") + " - " + str.tostring(nearestResistance, "#.####")
+            direction := "WAIT_FOR_BREAK"
+            confidence := 0.3
+    else
+        // Fallback when levels aren't detected
+        if not hasValidResistance and not hasValidSupport
+            prediction := "SCANNING_FOR_LEVELS"
+            direction := "NEUTRAL"
+            confidence := 0.1
+        else if hasValidResistance
+            prediction := "RESISTANCE_ONLY: " + str.tostring(nearestResistance, "#.####")
+            direction := "CAUTIOUS_SHORT"
+            confidence := 0.4
+        else if hasValidSupport
+            prediction := "SUPPORT_ONLY: " + str.tostring(nearestSupport, "#.####")
+            direction := "CAUTIOUS_LONG"
+            confidence := 0.4
+    
+    [prediction, direction, confidence]
+
+isLevelAlreadyBreachedLocal(float level, int bias, int lookback) =>
+    if na(level)
+        true
+    else
+        tolerance = atrValue * 0.05
+        breached = false
+        for i = 1 to lookback
+            if i <= bar_index
+                if (bias == 1 and close[i] >= level - tolerance) or (bias == -1 and close[i] <= level + tolerance)
+                    breached := true
+                    break
+        breached
+
+// Get all valid zones (recent and strong enough)
+getUnifiedValidZones() =>
+    zones = array.new<float>()
+    if safeSize(allZoneLevels) > 0
+        for i = 0 to safeSize(allZoneLevels) - 1
+            zone = safeGetFloat(allZoneLevels, i)
+            zoneType = safeGetString(allZoneTypes, i)
+            zoneIntent = safeGetString(allZoneIntents, i)
+            zoneStrength = safeGetFloat(allZoneStrength, i)
+            creationTime = safeGetInt(allZoneCreationTime, i)
+            
+            // Only include recent zones with sufficient strength
+            if not na(zone) and (bar_index - creationTime) < 200 and zoneStrength > 0.3
+                safePush(zones, zone)
+        
+        // Sort by proximity to current price
+        if safeSize(zones) > 1
+            sortZonesByProximity(zones)
+    zones
+
+detectBounceQualityLocal(int bias, float breachedLevel) =>
+    if na(breachedLevel)
+        "NEUTRAL_BOUNCE"
+    else
+        score = 0
+        
+        // 1. Volume analysis
+        if volume < ta.sma(volume, 20) * 0.8
+            score += 1
+        else if volume > ta.sma(volume, 20) * 1.2
+            score -= 1
+
+        // 2. Retracement depth
+        if bias == -1   // Bearish bias, price bounced from low
+            highestHigh = ta.highest(high, 10)
+            if highestHigh > breachedLevel
+                retr = (high - breachedLevel) / (highestHigh - breachedLevel)
+                if retr < 0.382
+                    score += 2
+                else if retr > 0.618
+                    score -= 2
+        else if bias == 1  // Bullish bias, price bounced from high
+            lowestLow = ta.lowest(low, 10)
+            if breachedLevel > lowestLow
+                retr = (breachedLevel - low) / (breachedLevel - lowestLow)
+                if retr < 0.382
+                    score += 2
+                else if retr > 0.618
+                    score -= 2
+
+        // 3. Wick rejection
+        highest3 = ta.highest(high, 3)
+        lowest3 = ta.lowest(low, 3)
+        if bias == -1 and (highest3 - close) > (close - lowest3) * 1.5
+            score += 1
+        else if bias == 1 and (close - lowest3) > (highest3 - close) * 1.5
+            score += 1
+
+        // 4. HTF alignment
+        htfAligned = (bias == -1 and globalCachedHTFBias <= 0) or (bias == 1 and globalCachedHTFBias >= 0)
+        if not htfAligned
+            score -= 1
+
+        // 5. EMA position
+        if bias == -1 and close < ta.ema(close, 20)
+            score += 1
+        else if bias == 1 and close > ta.ema(close, 20)
+            score -= 1
+
+        score >= 3 ? "WEAK_BOUNCE" :
+         score <= -2 ? "STRONG_REVERSAL" : "NEUTRAL_BOUNCE"
+
+findRetestLevelsLocal(int bias, float breachedLevel) =>
+    retest = array.new<float>()
+    
+    if na(breachedLevel)
+        retest
+    else
+        allZones = getUnifiedValidZones()
+        
+        if bias == -1
+            // Bearish - look for resistance levels below breached level
+            if array.size(allZones) > 0
+                for i = 0 to array.size(allZones) - 1
+                    z = safeGetFloat(allZones, i)
+                    if not na(z) and z > close and z < breachedLevel
+                        array.push(retest, z)
+            // Add recent swing highs
+            if array.size(recentSwingHighs) > 0
+                for i = 0 to array.size(recentSwingHighs) - 1
+                    z = safeGetFloat(recentSwingHighs, i)
+                    if not na(z) and z > close and z < breachedLevel
+                        array.push(retest, z)
+        else
+            // Bullish - look for support levels above breached level
+            if array.size(allZones) > 0
+                for i = 0 to array.size(allZones) - 1
+                    z = safeGetFloat(allZones, i)
+                    if not na(z) and z < close and z > breachedLevel
+                        array.push(retest, z)
+            // Add recent swing lows
+            if array.size(recentSwingLows) > 0
+                for i = 0 to array.size(recentSwingLows) - 1
+                    z = safeGetFloat(recentSwingLows, i)
+                    if not na(z) and z < close and z > breachedLevel
+                        array.push(retest, z)
+        
+        if array.size(retest) > 0
+            sortZonesByProximity(retest)
+        retest
+
+findNextValidBullTargetLocal(float breachedLevel) =>
+    if na(breachedLevel)
+        na
+    else
+        candidates = array.new<float>()
+        allZones = getUnifiedValidZones()
+        
+        if array.size(allZones) > 0
+            for i = 0 to array.size(allZones) - 1
+                z = safeGetFloat(allZones, i)
+                if not na(z) and z > breachedLevel and z > close and not isLevelAlreadyBreachedLocal(z, 1, 15)
+                    array.push(candidates, z)
+        
+        if array.size(predictiveLiquidityPools) > 0
+            for i = 0 to array.size(predictiveLiquidityPools) - 1
+                z = safeGetFloat(predictiveLiquidityPools, i)
+                if not na(z) and z > breachedLevel and z > close and not isLevelAlreadyBreachedLocal(z, 1, 15)
+                    array.push(candidates, z)
+        
+        if array.size(candidates) > 0
+            sortZonesByProximity(candidates)
+            array.get(candidates, 0)
+        else
+            na
+
+findNextValidBearTargetLocal(float breachedLevel) =>
+    if na(breachedLevel)
+        na
+    else
+        candidates = array.new<float>()
+        allZones = getUnifiedValidZones()
+        
+        if array.size(allZones) > 0
+            for i = 0 to array.size(allZones) - 1
+                z = safeGetFloat(allZones, i)
+                if not na(z) and z < breachedLevel and z < close and not isLevelAlreadyBreachedLocal(z, -1, 15)
+                    array.push(candidates, z)
+        
+        if array.size(predictiveLiquidityPools) > 0
+            for i = 0 to array.size(predictiveLiquidityPools) - 1
+                z = safeGetFloat(predictiveLiquidityPools, i)
+                if not na(z) and z < breachedLevel and z < close and not isLevelAlreadyBreachedLocal(z, -1, 15)
+                    array.push(candidates, z)
+        
+        if array.size(candidates) > 0
+            sortZonesByProximity(candidates)
+            array.get(candidates, 0)
+        else
+            na
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// ENHANCED 15-MINUTE PREDICTION SYSTEM WITH BREACH/BOUNCE LOGIC
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Smart 15m target with breach checking
+getSmart15mTargetLocal(int bias, float nextBullZone, float nextBearZone) =>
+    if bias == 1 and not na(nextBullZone)
+        if not isLevelAlreadyBreachedLocal(nextBullZone, 1, 15)
+            distATR = (nextBullZone - close) / atrValue
+            distTxt = distATR <= 0.5 ? " (CLOSE)" : " (" + str.tostring(distATR, "#.#") + " ATR)"
+            "🟢 " + str.tostring(nextBullZone, "#.####") + distTxt
+        else
+            "🔴 " + str.tostring(nextBullZone, "#.####") + " (BREACHED)"
+    else if bias == -1 and not na(nextBearZone)
+        if not isLevelAlreadyBreachedLocal(nextBearZone, -1, 15)
+            distATR = (close - nextBearZone) / atrValue
+            distTxt = distATR <= 0.5 ? " (CLOSE)" : " (" + str.tostring(distATR, "#.#") + " ATR)"
+            "🔴 " + str.tostring(nextBearZone, "#.####") + distTxt
+        else
+            "🟢 " + str.tostring(nextBearZone, "#.####") + " (BREACHED)"
+    else
+        "⏸️ WAITING FOR SETUP"
+
+// Trading call with bounce analysis
+getTradingCallLocal(int bias, string phase, string targetDisplay, float nextBull, float nextBear) =>
+    breached = str.contains(targetDisplay, "BREACHED")
+    if breached
+        breachedLevel = bias == 1 ? nextBull : nextBear
+        bounceQuality = detectBounceQualityLocal(bias, breachedLevel)
+        retestLevels = findRetestLevelsLocal(bias, breachedLevel)
+
+        if bounceQuality == "WEAK_BOUNCE"
+            nextTgt = bias == 1 ? findNextValidBullTargetLocal(breachedLevel) : findNextValidBearTargetLocal(breachedLevel)
+            retest = array.size(retestLevels) > 0 ? array.get(retestLevels, 0) : na
+            if not na(retest) and not na(nextTgt)
+                "WEAK BOUNCE – Sell " + str.tostring(retest, "#.####") + " | Target: " + str.tostring(nextTgt, "#.####")
+            else if not na(nextTgt)
+                "WEAK BOUNCE – Sell rallies | Target: " + str.tostring(nextTgt, "#.####")
+            else
+                "WEAK BOUNCE – Expect continuation " + (bias == 1 ? "up" : "down")
+
+        else if bounceQuality == "STRONG_REVERSAL"
+            if bias == 1
+                lowerTgt = findNextValidBearTargetLocal(breachedLevel)
+                not na(lowerTgt) ? "TREND REVERSING – Short to " + str.tostring(lowerTgt, "#.####") : "POTENTIAL REVERSAL – Consider shorts"
+            else
+                higherTgt = findNextValidBullTargetLocal(breachedLevel)
+                not na(higherTgt) ? "TREND REVERSING – Long to " + str.tostring(higherTgt, "#.####") : "POTENTIAL REVERSAL – Consider longs"
+
+        else
+            if bias == 1
+                higherTgt = findNextValidBullTargetLocal(breachedLevel)
+                not na(higherTgt) ? "BREAKOUT – Next target: " + str.tostring(higherTgt, "#.####") : "BREAKOUT – Watch for continuation"
+            else
+                lowerTgt = findNextValidBearTargetLocal(breachedLevel)
+                not na(lowerTgt) ? "BREAKDOWN – Next target: " + str.tostring(lowerTgt, "#.####") : "BREAKDOWN – Watch for continuation"
+    else
+        // Normal phase-based prediction
+        base = bias == 1 and phase == "ACCUMULATION" ? "BREAKOUT SOON" :
+               bias == 1 and phase == "MARKUP" ? "CONTINUE UP" :
+               bias == -1 and phase == "DISTRIBUTION" ? "BREAKDOWN SOON" :
+               bias == -1 and phase == "MARKDOWN" ? "CONTINUE DOWN" :
+               bias == 0 ? "WAIT FOR BIAS" : "NO CLEAR EDGE"
+        base
+
+// Bounce-adjusted confidence
+getBounceAdjustedConfidenceLocal(int bias, string phase, string targetDisplay, string bounceQuality) =>
+    baseConf = (bias == 1 and (phase == "ACCUMULATION" or phase == "MARKUP")) or
+               (bias == -1 and (phase == "DISTRIBUTION" or phase == "MARKDOWN")) ? "HIGH" :
+               bias != 0 ? "MEDIUM" : "LOW"
+
+    if str.contains(targetDisplay, "BREACHED")
+        if bounceQuality == "WEAK_BOUNCE"
+            "HIGH"
+        else if bounceQuality == "STRONG_REVERSAL"
+            "LOW"
+        else
+            baseConf == "HIGH" ? "MEDIUM" : baseConf
+    else
+        baseConf
+
+// Unified 15m prediction with exhaustion integration
+getUnified15mPredictionLocal(int bias, string phase, float nextBull, float nextBear) =>
+    targetDisplay = getSmart15mTargetLocal(bias, nextBull, nextBear)
+    breached = str.contains(targetDisplay, "BREACHED")
+    bounceQuality = breached ? detectBounceQualityLocal(bias, bias == 1 ? nextBull : nextBear) : "NONE"
+    
+    // Enhanced with exhaustion detection
+    exhaustionCount = array.size(exhaustionSignals)
+    
+    var string tradingCall = ""
+    var string confidence = ""
+    
+    if exhaustionCount >= minExhaustionStrength
+        if globalBullishExhaustion and bias == 1
+            tradingCall := "BULLISH EXHAUSTION - " + getTradingCallLocal(bias, phase, targetDisplay, nextBull, nextBear) + " | Consider taking profits"
+            confidence := "MEDIUM"
+        else if globalBearishExhaustion and bias == -1
+            tradingCall := "BEARISH EXHAUSTION - " + getTradingCallLocal(bias, phase, targetDisplay, nextBull, nextBear) + " | Consider taking profits" 
+            confidence := "MEDIUM"
+        else if globalBullishExhaustion and bias == -1
+            tradingCall := "BULLISH EXHAUSTION + BEARISH BIAS - Potential reversal up"
+            confidence := "HIGH"
+        else if globalBearishExhaustion and bias == 1
+            tradingCall := "BEARISH EXHAUSTION + BULLISH BIAS - Potential reversal down"
+            confidence := "HIGH"
+        else
+            tradingCall := getTradingCallLocal(bias, phase, targetDisplay, nextBull, nextBear) + " | Exhaustion signals: " + str.tostring(exhaustionCount)
+            confidence := getBounceAdjustedConfidenceLocal(bias, phase, targetDisplay, bounceQuality)
+    else
+        tradingCall := getTradingCallLocal(bias, phase, targetDisplay, nextBull, nextBear)
+        confidence := getBounceAdjustedConfidenceLocal(bias, phase, targetDisplay, bounceQuality)
+    
+    [tradingCall, targetDisplay, confidence]
+// Add after line 1400
+
+get15mBiasLocal() =>
+    ema50 = ta.ema(close, 50)
+    ema200 = ta.ema(close, 200)
+    close > ema50 and close > ema200 and rsi > 45 ? 1 : close < ema50 and close < ema200 and rsi < 55 ? -1 : 0
+
+getConfidenceLocal(bias, phase) =>
+    (bias == 1 and (phase == "ACCUMULATION" or phase == "MARKUP")) or (bias == -1 and (phase == "DISTRIBUTION" or phase == "MARKDOWN")) ? "HIGH" : bias != 0 ? "MEDIUM" : "LOW"
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// ZONE MANAGEMENT FUNCTIONS - COMPLETE SET
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Check if a zone already exists within tolerance
+zoneExists(level, tolerance) =>
+    result = false
+    toleranceValue = not na(tolerance) ? tolerance : atrValue * 0.1
+    if array.size(allZoneLevels) > 0
+        for i = 0 to array.size(allZoneLevels) - 1
+            existingLevel = safeGetFloat(allZoneLevels, i)
+            if not na(existingLevel) and math.abs(existingLevel - level) <= toleranceValue
+                result := true
+                break
+    result
+
+// Add a new zone with all metadata
+addZone(price, zoneType, intent, strength, visualBox) =>
+    if not na(price)
+        safePush(allZoneLevels, price)
+        safePush(allZoneTypes, zoneType)
+        safePush(allZoneIntents, intent)
+        safePush(allZoneStrength, strength)
+        safePush(allZoneCreationTime, bar_index)
+        safePush(allZoneBoxes, visualBox)
+        safePush(zoneGracePeriods, zoneType == "STRUCTURAL" ? 5 : 3)
+        
+        if debugMode
+            debugLog("Zone Added: " + str.tostring(price) + " " + zoneType + " " + intent)
+
+isHTFLevelLocal(float level) =>
+    if na(level)
+        false
+    else
+        weeklyHigh = request.security(syminfo.tickerid, "W", high, barmerge.gaps_off, barmerge.lookahead_off)
+        weeklyLow  = request.security(syminfo.tickerid, "W", low,  barmerge.gaps_off, barmerge.lookahead_off)
+        dailyHigh  = request.security(syminfo.tickerid, "D", high, barmerge.gaps_off, barmerge.lookahead_off)
+        dailyLow   = request.security(syminfo.tickerid, "D", low,  barmerge.gaps_off, barmerge.lookahead_off)
+
+        (not na(weeklyHigh) and math.abs(level - weeklyHigh) <= atrValue * 0.1) or
+         (not na(weeklyLow)  and math.abs(level - weeklyLow)  <= atrValue * 0.1) or
+         (not na(dailyHigh)  and math.abs(level - dailyHigh)  <= atrValue * 0.1) or
+         (not na(dailyLow)   and math.abs(level - dailyLow)   <= atrValue * 0.1)
+
+
+
+isMTFLevelLocal(float level) =>
+    if na(level)
+        false
+    else
+        h4High = request.security(syminfo.tickerid, "240", high, barmerge.gaps_off, barmerge.lookahead_off)
+        h4Low  = request.security(syminfo.tickerid, "240", low,  barmerge.gaps_off, barmerge.lookahead_off)
+        (not na(h4High) and math.abs(level - h4High) <= atrValue * 0.1) or
+         (not na(h4Low)  and math.abs(level - h4Low)  <= atrValue * 0.1)
+
+
+
+// Calculate nearest zones above and below current price
+calculateNearestZonesLocal() =>
+    allZones = getUnifiedValidZones()
+    float nearestBull = na
+    float nearestBear = na
+    float strongestBull = na
+    float strongestBear = na
+    float maxBullStrength = 0.0
+    float maxBearStrength = 0.0
+    
+    if safeSize(allZones) > 0
+        for i = 0 to safeSize(allZones) - 1
+            zone = safeGetFloat(allZoneLevels, i)
+            zoneType = safeGetString(allZoneTypes, i)
+            zoneStrength = safeGetFloat(allZoneStrength, i)
+            
+            if not na(zone) and not na(zoneStrength)
+                // Find nearest zones
+                if zone > close and (na(nearestBull) or zone < nearestBull)
+                    nearestBull := zone
+                if zone < close and (na(nearestBear) or zone > nearestBear)
+                    nearestBear := zone
+                
+                // Find strongest zones
+                if zone > close and zoneStrength > maxBullStrength
+                    maxBullStrength := zoneStrength
+                    strongestBull := zone
+                if zone < close and zoneStrength > maxBearStrength  
+                    maxBearStrength := zoneStrength
+                    strongestBear := zone
+    
+    // Prefer strongest zone if it's reasonably close
+    if not na(strongestBull) and not na(nearestBull) and math.abs(strongestBull - nearestBull) <= atrValue * 1.5
+        nearestBull := strongestBull
+    if not na(strongestBear) and not na(nearestBear) and math.abs(strongestBear - nearestBear) <= atrValue * 1.5
+        nearestBear := strongestBear
+        
+    [nearestBull, nearestBear]
+
+// Update zone strengths based on current market conditions
+updateZoneStrength() =>
+    threshold = getDynamicThreshold()
+    
+    i = 0
+    while i < array.size(allZoneLevels)
+        if i < array.size(allZoneLevels) and i < array.size(allZoneStrength)
+            zone = safeGetFloat(allZoneLevels, i)
+            currentStrength = safeGetFloat(allZoneStrength, i)
+            
+            if not na(zone)
+                baseStrength = 1.0
+                
+                // 1. Volume at creation (recent zones are stronger)
+                creationTime = safeGetInt(allZoneCreationTime, i)
+                if not na(creationTime) and creationTime <= bar_index
+                    barsAgo = bar_index - creationTime
+                    if barsAgo < 20
+                        baseStrength := baseStrength * (1.0 + (20 - barsAgo) / 20.0)
+                
+                // 2. Proximity to price (closer = stronger)
+                distance = math.abs(close - zone)
+                distanceRatio = distance / (atrValue * 3.0)
+                proximityBoost = 1.0 + math.max(0, 1.0 - distanceRatio) * 0.5
+                baseStrength := baseStrength * proximityBoost
+                
+                // 3. Volume confirmation
+                if array.size(highVolumeZones) > 0
+                    for j = 0 to array.size(highVolumeZones) - 1
+                        volZone = safeGetFloat(highVolumeZones, j)
+                        if not na(volZone) and math.abs(zone - volZone) < threshold * 0.5
+                            baseStrength := baseStrength * 1.3
+                            break
+                
+                // 4. Multi-timeframe confirmation
+                if isHTFLevelLocal(zone) or isMTFLevelLocal(zone)
+                    baseStrength := baseStrength * 1.5
+                
+                // 5. Decay over time
+                if not na(currentStrength)
+                    decay = 0.98
+                    baseStrength := math.max(baseStrength, currentStrength * decay)
+                
+                safeSetFloat(allZoneStrength, i, baseStrength)
+        i += 1
+
+// Perform cleanup of stale zones and targets
+performUnifiedCleanup() =>
+    int removedZones = 0
+    
+    // Clean stale zones
+    int i = array.size(allZoneLevels) - 1
+    while i >= 0
+        if i < array.size(allZoneLevels) and i < array.size(allZoneCreationTime)
+            int age = bar_index - safeGetInt(allZoneCreationTime, i)
+            float strength = safeGetFloat(allZoneStrength, i)
+            
+            if age > 200 or (not na(strength) and strength < 0.3)
+                // Remove zone box if it exists
+                if i < array.size(allZoneBoxes)
+                    box zoneBox = safeGetBox(allZoneBoxes, i)
+                    if not na(zoneBox)
+                        box.delete(zoneBox)
+                
+                // Remove from all arrays
+                safeRemove(allZoneLevels, i)
+                safeRemove(allZoneTypes, i)
+                safeRemove(allZoneIntents, i)
+                safeRemove(allZoneStrength, i)
+                safeRemove(allZoneCreationTime, i)
+                if array.size(allZoneBoxes) > i
+                    safeRemove(allZoneBoxes, i)
+                if array.size(zoneGracePeriods) > i
+                    safeRemove(zoneGracePeriods, i)
+                
+                removedZones += 1
+        i -= 1
+    
+    // Clean stale price targets
+    int j = array.size(priceTargets) - 1
+    while j >= 0
+        if j < array.size(priceTargets)
+            safeRemove(priceTargets, j)
+            if j < array.size(targetTypes)
+                safeRemove(targetTypes, j)
+            if j < array.size(targetStrengths)
+                safeRemove(targetStrengths, j)
+            if j < array.size(targetSources)
+                safeRemove(targetSources, j)
+        j -= 1
+    
+    // Clean other stale arrays periodically
+    if bar_index % 100 == 0
+        // Clean debug logs
+        while array.size(debugLogs) > 50
+            array.remove(debugLogs, 0)
+        
+        // Clean exhaustion signals
+        while array.size(exhaustionSignals) > 20
+            array.remove(exhaustionSignals, 0)
+            if array.size(exhaustionLevels) > 0
+                array.remove(exhaustionLevels, 0)
+            if array.size(exhaustionDirections) > 0
+                array.remove(exhaustionDirections, 0)
+            if array.size(exhaustionStrengths) > 0
+                array.remove(exhaustionStrengths, 0)
+    
+    removedZones
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// ZONE INTENT CLASSIFICATION FOR FVG ZONES
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+classifyZoneIntentLocal(zone, zoneType, marketPhase) =>
+    intent = "NEUTRAL"
+    
+    // FVG zones get special treatment
+    bool isNearFVG = false
+    for i = 0 to array.size(fvgBoxes) - 1
+        if getFvgActive(i)
+            fvgLevel = getFvgBullish(i) ? getFvgLow(i) : getFvgHigh(i)
+            if math.abs(zone - fvgLevel) <= atrValue * 0.1
+                isNearFVG := true
+                break
+    
+    if isNearFVG
+        intent := "SMART_TARGET"
+    else if marketPhase == "ACCUMULATION" and zoneType == "SUPPORT"
+        intent := "SMART_TARGET"
+    else if marketPhase == "DISTRIBUTION" and zoneType == "RESISTANCE"
+        intent := "SMART_TARGET"
+    else if zoneType == "RESISTANCE" and close < zone and zone - close <= atrValue * 2.0
+        intent := "BREAKOUT_TARGET"
+    else if zoneType == "SUPPORT" and close > zone and close - zone <= atrValue * 2.0
+        intent := "BREAKOUT_TARGET"
+        
+    intent
+
+// Zone color helper for FVG zones
+getZoneColorLocal(intent) =>
+    intent == "SMART_TARGET" ? color.lime : 
+     intent == "BREAKOUT_TARGET" ? color.teal : 
+     color.gray
+
+// Local gravity strength calculation for FVG zones
+calculateEnhancedGravityStrengthLocal(zone) =>
+    if na(zone)
+        0.0
+    else
+        distance = math.abs(close - zone)
+        distanceATR = distance / math.max(atrValue, syminfo.mintick * 100)
+        
+        // ENHANCED: Boost strength for FVG-related zones
+        baseStrength = 2.0 / math.max(distanceATR, 0.05)
+        
+        // Check if zone aligns with active FVG
+        for i = 0 to array.size(fvgBoxes) - 1
+            if getFvgActive(i)
+                fvgLevel = getFvgBullish(i) ? getFvgLow(i) : getFvgHigh(i)
+                if math.abs(zone - fvgLevel) <= atrValue * 0.08
+                    baseStrength := baseStrength * 1.5  // Significant boost
+                    break
+        
+        baseStrength
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 10. FVG FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+createFVG(fvgTop, fvgBottom, isBullish, creationBar) =>
+    result = 0
+    if array.size(fvgBoxes) < maxFVGBoxes
+        fvgColor = isBullish ? color.new(color.green, 85) : color.new(color.red, 85)
+        fvgBox = box.new(bar_index - 1, fvgTop, bar_index + fvgLookback * 3, fvgBottom, bgcolor=fvgColor, border_color=color.new(color.white, 50), border_width=1)
+        safePush(fvgBoxes, fvgBox)
+        safePush(fvgActive, true)
+        safePush(fvgBullish, isBullish)
+        safePush(fvgBars, creationBar)
+        safePush(fvgHigh, fvgTop)
+        safePush(fvgLow, fvgBottom)
+        result := isBullish ? 1 : -1
+        
+        // ============================================================
+        // AUTO-CREATE ZONE FROM FVG WITH PROPER CLASSIFICATION
+        // ============================================================
+        zoneLevel = isBullish ? fvgBottom : fvgTop
+        zoneType = isBullish ? "SUPPORT" : "RESISTANCE"
+        
+        // Get market phase for classification
+        currentPhase = detectMarketPhaseLocal()
+        
+        // Classify zone intent
+        intent = classifyZoneIntentLocal(zoneLevel, zoneType, currentPhase)
+        
+        // Calculate zone strength
+        strength = calculateEnhancedGravityStrengthLocal(zoneLevel) * 1.3  // Boost FVG zone strength
+        
+        // Check if zone already exists
+        dynamicThreshold = getDynamicThreshold()
+        if not zoneExists(zoneLevel, dynamicThreshold * 0.5)
+            // Create zone box
+            zoneBox = box.new(bar_index - 25, zoneLevel, bar_index + 25, zoneLevel, 
+                              bgcolor=color.new(getZoneColorLocal(intent), 70), 
+                              border_color=color.white, 
+                              border_width=1)
+            
+            // Add zone to all arrays (manual zone creation)
+            safePush(allZoneLevels, zoneLevel)
+            safePush(allZoneTypes, zoneType)
+            safePush(allZoneIntents, intent)
+            safePush(allZoneStrength, strength)
+            safePush(allZoneCreationTime, bar_index)
+            safePush(allZoneBoxes, zoneBox)
+            safePush(zoneGracePeriods, 5)
+            
+            if debugMode
+                debugLog("Auto-created FVG Zone: " + str.tostring(zoneLevel) + " " + zoneType + " [" + intent + "]")
+        // ============================================================
+        
+    result
+
+detectFVG() =>
+    result = 0
+    if showFVG
+        // ENHANCED: Multiple Lookback Periods
+        previousHigh1 = ta.highest(high, 3)[1]  // Short-term
+        previousHigh2 = ta.highest(high, 5)[1]  // Medium-term  
+        previousHigh3 = ta.highest(high, 8)[1]  // Long-term
+        
+        previousLow1 = ta.lowest(low, 3)[1]     // Short-term
+        previousLow2 = ta.lowest(low, 5)[1]     // Medium-term
+        previousLow3 = ta.lowest(low, 8)[1]     // Long-term
+        
+        // ENHANCED: Gap Detection
+        priceGapBull = low > high[1] or low > high[2] or low > high[3]
+        priceGapBear = high < low[1] or high < low[2] or high < low[3]
+        
+        // ENHANCED: Volume Conditions
+        volumeSpikeModerate = volume > avgVolume * 1.2
+        volumeSpikeStrong = volume > avgVolume * 1.5
+        volumeConfirmed = volumeSpikeModerate or (volumeSpikeStrong and barstate.isconfirmed)
+        
+        minFVGSized = atrValue * fvgMinSizeATR
+        
+        // ENHANCED: Bullish FVG Detection
+        bullishCondition1 = high > previousHigh1 and priceGapBull and (high[1] - low) >= minFVGSized
+        bullishCondition2 = high > previousHigh2 and priceGapBull and (high[2] - low) >= minFVGSized  
+        bullishCondition3 = high > previousHigh3 and priceGapBull and (high[3] - low) >= minFVGSized
+        
+        if (bullishCondition1 or bullishCondition2 or bullishCondition3) and volumeConfirmed
+            // Use the most relevant gap
+            float fvgTop = na
+            float fvgBottom = na
+            
+            if bullishCondition1
+                fvgTop := high[1]
+                fvgBottom := low
+            else if bullishCondition2  
+                fvgTop := high[2]
+                fvgBottom := low
+            else if bullishCondition3
+                fvgTop := high[3]
+                fvgBottom := low
+                
+            if not na(fvgTop) and not na(fvgBottom)
+                result := createFVG(fvgTop, fvgBottom, true, bar_index)
+                if debugMode
+                    debugLog("Bullish FVG: " + str.tostring(fvgTop) + " - " + str.tostring(fvgBottom))
+        
+        // ENHANCED: Bearish FVG Detection
+        bearishCondition1 = low < previousLow1 and priceGapBear and (high - low[1]) >= minFVGSized
+        bearishCondition2 = low < previousLow2 and priceGapBear and (high - low[2]) >= minFVGSized
+        bearishCondition3 = low < previousLow3 and priceGapBear and (high - low[3]) >= minFVGSized
+        
+        if (bearishCondition1 or bearishCondition2 or bearishCondition3) and volumeConfirmed
+            // Use the most relevant gap
+            float fvgTop = na
+            float fvgBottom = na
+            
+            if bearishCondition1
+                fvgTop := high
+                fvgBottom := low[1]
+            else if bearishCondition2
+                fvgTop := high  
+                fvgBottom := low[2]
+            else if bearishCondition3
+                fvgTop := high
+                fvgBottom := low[3]
+                
+            if not na(fvgTop) and not na(fvgBottom)
+                result := createFVG(fvgTop, fvgBottom, false, bar_index)
+                if debugMode
+                    debugLog("Bearish FVG: " + str.tostring(fvgTop) + " - " + str.tostring(fvgBottom))
+        
+        // NEW: Momentum-Based FVG
+        if result == 0
+            momentumGap = math.abs(close - close[3]) > atrValue * 1.5
+            volumeMomentum = volume > ta.sma(volume, 10) * 1.3
+            
+            if momentumGap and volumeMomentum
+                // Look for the largest recent gap
+                gapSize1 = high[1] - low
+                gapSize2 = high[2] - low  
+                gapSize3 = high[3] - low
+                
+                maxGapSize = math.max(math.max(gapSize1, gapSize2), gapSize3)
+                
+                if maxGapSize >= minFVGSized * 0.8
+                    if maxGapSize == gapSize1 and low > high[1]
+                        result := createFVG(high[1], low, true, bar_index)
+                    else if maxGapSize == gapSize2 and low > high[2]  
+                        result := createFVG(high[2], low, true, bar_index)
+                    else if maxGapSize == gapSize3 and low > high[3]
+                        result := createFVG(high[3], low, true, bar_index)
+                        
+                    if result != 0 and debugMode
+                        debugLog("Momentum FVG Created: " + str.tostring(maxGapSize))
+    
+    result
+
+checkFVGInvalidation() =>
+    i = safeSize(fvgBoxes) - 1
+    while i >= 0
+        if getFvgActive(i)
+            fvgTop = getFvgHigh(i)
+            fvgBottom = getFvgLow(i)
+            isBullish = getFvgBullish(i)
+            if not na(fvgTop) and not na(fvgBottom)
+                fvgHeight = fvgTop - fvgBottom
+                invalidationLevel = isBullish ? fvgBottom - (fvgHeight * fvgInvalidationPercent) : fvgTop + (fvgHeight * fvgInvalidationPercent)
+                
+                // ENHANCED: Check if FVG is still valid
+                fvgAge = bar_index - safeGetInt(fvgBars, i)
+                recentlyCreated = fvgAge < 10  // Grace period
+                
+                if (isBullish and low <= invalidationLevel) or (not isBullish and high >= invalidationLevel)
+                    if not recentlyCreated or (recentlyCreated and volume > avgVolume * 2.0)
+                        safeSetBool(fvgActive, i, false)  // FIXED: Use safeSetBool
+                        if debugMode
+                            debugLog("FVG Invalidated: " + str.tostring(fvgTop) + " - " + str.tostring(fvgBottom))
+        i := i - 1
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 12. SWEEP & EXHAUSTION DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+detectZoneSweepsLocal() =>
+    float threshold = getDynamicThreshold()
+    bool   sweptThisBar = false
+    int    localSweepCount = 0
+
+    int i = 0
+    while i < array.size(allZoneLevels)
+        if i < array.size(allZoneTypes)
+            float zone  = safeGetFloat(allZoneLevels, i)
+            string zTyp = safeGetString(allZoneTypes, i)
+
+            if not na(zone)
+                if zTyp == "RESISTANCE" and
+                   high >= zone - threshold * 0.1 and
+                   high[1] < zone and
+                   not safeIncludes(sweptZones, zone)
+
+                    safePush(sweptZones, zone)
+                    safePush(sweptTimestamps, bar_index)
+                    sweptThisBar := true
+                    localSweepCount += 1
+
+                else if zTyp == "SUPPORT" and low <= zone + threshold * 0.1 and low[1] > zone and not safeIncludes(sweptZones, zone)
+
+                    safePush(sweptZones, zone)
+                    safePush(sweptTimestamps, bar_index)
+                    sweptThisBar := true
+                    localSweepCount += 1
+        i += 1
+
+    int j = array.size(sweptTimestamps) - 1
+    while j >= 0
+        if safeGetInt(sweptTimestamps, j) < bar_index - 50
+            safeRemove(sweptZones,     j)
+            safeRemove(sweptTimestamps, j)
+        j -= 1
+
+    [sweptThisBar, localSweepCount]
+
+safeDetectZoneSweeps() =>
+    [swept, count] = detectZoneSweepsLocal()
+    [swept, count]
+
+detectAllExhaustionLocal() =>
+    // Clear arrays
+    array.clear(exhaustionSignals)
+    array.clear(exhaustionLevels)
+    array.clear(exhaustionDirections)
+    array.clear(exhaustionStrengths)
+    
+    // 1. Volume exhaustion
+    float bodySize = math.abs(close - open)
+    float rangeSize = high - low
+    bool  smallBody = rangeSize > 0 ? bodySize / rangeSize < 0.3 : false
+    float upperWick = high - math.max(open, close)
+    float lowerWick = math.min(open, close) - low
+
+    if volume > ta.sma(volume, 20) * 2.0 and smallBody
+        if upperWick > bodySize * 1.5 and close < open        // bearish
+            safePush(exhaustionSignals,   "VOLUME_EXHAUSTION")
+            safePush(exhaustionLevels,    high)
+            safePush(exhaustionDirections,"BEARISH")
+            safePush(exhaustionStrengths, 2)
+        else if lowerWick > bodySize * 1.5 and close > open   // bullish
+            safePush(exhaustionSignals,   "VOLUME_EXHAUSTION")
+            safePush(exhaustionLevels,    low)
+            safePush(exhaustionDirections,"BULLISH")
+            safePush(exhaustionStrengths, 2)
+
+    // 2. Momentum (RSI) divergence
+    bool priceHigher = close > close[5]
+    bool rsiLower    = rsi < rsi[5]
+    bool priceLower  = close < close[5]
+    bool rsiHigher   = rsi > rsi[5]
+
+    if priceHigher and rsiLower and rsi > 65      // bearish divergence
+        safePush(exhaustionSignals,   "MOMENTUM_DIVERGENCE")
+        safePush(exhaustionLevels,    high)
+        safePush(exhaustionDirections,"BEARISH")
+        safePush(exhaustionStrengths, 3)
+    else if priceLower and rsiHigher and rsi < 35 // bullish divergence
+        safePush(exhaustionSignals,   "MOMENTUM_DIVERGENCE")
+        safePush(exhaustionLevels,    low)
+        safePush(exhaustionDirections,"BULLISH")
+        safePush(exhaustionStrengths, 3)
+
+    // 3. Price exhaustion (range contraction after strong move)
+    float atrLocal       = ta.atr(14)
+    float recentRange    = ta.highest(high, 5) - ta.lowest(low, 5)
+    bool  rangeContract  = recentRange < atrLocal * 0.6
+    bool  priorUp        = (close[5] - close[15]) > atrLocal * 2.5
+    bool  priorDown      = (close[15] - close[5]) > atrLocal * 2.5
+
+    if rangeContract
+        if priorUp and close < ta.highest(high, 10)
+            safePush(exhaustionSignals,   "PRICE_EXHAUSTION")
+            safePush(exhaustionLevels,    ta.highest(high, 10))
+            safePush(exhaustionDirections,"BEARISH")
+            safePush(exhaustionStrengths, 2)
+        else if priorDown and close > ta.lowest(low, 10)
+            safePush(exhaustionSignals,   "PRICE_EXHAUSTION")
+            safePush(exhaustionLevels,    ta.lowest(low, 10))
+            safePush(exhaustionDirections,"BULLISH")
+            safePush(exhaustionStrengths, 2)
+
+    // 4. Exhaustion gap
+    bool gapUp   = low > high[1]
+    bool gapDown = high < low[1]
+    bool hiVol   = volume > ta.sma(volume, 20) * 1.8
+
+    if gapUp and hiVol and close < open        // bearish exhaustion gap
+        safePush(exhaustionSignals,   "EXHAUSTION_GAP")
+        safePush(exhaustionLevels,    high[1])
+        safePush(exhaustionDirections,"BEARISH")
+        safePush(exhaustionStrengths, 3)
+    else if gapDown and hiVol and close > open // bullish exhaustion gap
+        safePush(exhaustionSignals,   "EXHAUSTION_GAP")
+        safePush(exhaustionLevels,    low[1])
+        safePush(exhaustionDirections,"BULLISH")
+        safePush(exhaustionStrengths, 3)
+
+    // 5. Wick exhaustion
+    bool veryLongUpperWick = upperWick > bodySize * 2.0
+    bool veryLongLowerWick = lowerWick > bodySize * 2.0
+    bool nearRecentHigh    = high >= ta.highest(high, 10) * 0.998
+    bool nearRecentLow     = low  <= ta.lowest(low, 10)  * 1.002
+
+    if veryLongUpperWick and nearRecentHigh
+        safePush(exhaustionSignals,   "WICK_EXHAUSTION")
+        safePush(exhaustionLevels,    high)
+        safePush(exhaustionDirections,"BEARISH")
+        safePush(exhaustionStrengths, 2)
+    else if veryLongLowerWick and nearRecentLow
+        safePush(exhaustionSignals,   "WICK_EXHAUSTION")
+        safePush(exhaustionLevels,    low)
+        safePush(exhaustionDirections,"BULLISH")
+        safePush(exhaustionStrengths, 2)
+
+    // ---- tally totals ----
+    int localBullCount = 0
+    int localBearCount = 0
+    int localTotalStrength = 0
+
+    for i = 0 to array.size(exhaustionDirections) - 1
+        string dir = safeGetString(exhaustionDirections, i)
+        int    str = safeGetInt(exhaustionStrengths, i)
+        if dir == "BULLISH"
+            localBullCount := localBullCount + 1
+        else if dir == "BEARISH"
+            localBearCount := localBearCount + 1
+        localTotalStrength := localTotalStrength + str
+
+    // FIXED: Return proper tuple format
+    bool isBullishExhaustion = localBullCount > localBearCount
+    bool isBearishExhaustion = localBearCount > localBullCount
+    bool isBalancedExhaustion = localBullCount > 0 and localBullCount == localBearCount
+    int signalCount = array.size(exhaustionSignals)
+
+    [isBullishExhaustion, isBearishExhaustion, isBalancedExhaustion, localTotalStrength, signalCount]
+
+safeDetectAllExhaustion() =>
+    [bullish, bearish, balanced, score, count] = detectAllExhaustionLocal()
+    if validateExhaustionReturn(bullish, bearish, balanced, score, count)
+        [bullish, bearish, balanced, score, count]
+    else
+        [false, false, false, 0, 0]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 13. ORDER FLOW FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+calculatePrecisionOrderFlowLocal() =>
+    // Order flow analysis with SAFE ARRAY CHECKS
+    bidAskImbalance = (volume * (close - low) / (high - low)) - (volume * (high - close) / (high - low))
+    normalizedImbalance = bidAskImbalance / math.max(ta.sma(volume, 20), 1)
+    
+    // Momentum acceleration
+    priceAccel = (close - close[1]) - (close[1] - close[2])
+    volumeAccel = volume - volume[1]
+    
+    // Market depth simulation WITH SAFETY CHECKS
+    supportDepth = 0.0
+    resistanceDepth = 0.0
+    
+    // SAFE CHECK: Only proceed if arrays have data
+    if array.size(allZoneLevels) > 0 and array.size(allZoneStrength) > 0
+        for i = 0 to array.size(allZoneLevels) - 1
+            if i < array.size(allZoneLevels) and i < array.size(allZoneStrength)
+                zone = safeGetFloat(allZoneLevels, i)
+                strength = safeGetFloat(allZoneStrength, i)
+                if not na(zone) and not na(strength)
+                    if zone < close and math.abs(zone - close) < atrValue * 0.5
+                        supportDepth += strength
+                    else if zone > close and math.abs(zone - close) < atrValue * 0.5
+                        resistanceDepth += strength
+    
+    depthRatio = supportDepth / math.max(resistanceDepth, 0.001)
+    
+    // Entry scoring
+    entryScore = 0.0
+    entryScore += normalizedImbalance * 0.3
+    entryScore += priceAccel / math.max(atrValue, syminfo.mintick) * 0.25
+    entryScore += volumeAccel / math.max(ta.sma(volume, 20), 1) * 0.2
+    entryScore += (depthRatio - 1.0) * 0.25
+    
+    // Entry signals
+    longEntryLocal = entryScore > 0.6 and normalizedImbalance > 0.2 and priceAccel > 0
+    shortEntryLocal = entryScore < -0.6 and normalizedImbalance < -0.2 and priceAccel < 0
+    
+    [longEntryLocal, shortEntryLocal, entryScore]
+// Add after line 1650 (after order flow functions)
+
+detectOrderFlowImbalanceLocal() =>
+    float volumeRatio        = volume / ta.sma(volume, 20)
+    float bodySize           = math.abs(close - open)
+    float rangeSize          = high - low
+    float bodyRangeRatio     = rangeSize > 0 ? bodySize / rangeSize : 0.0
+    float closePercent       = rangeSize > 0 ? (close - low) / rangeSize : 0.5
+    
+    string detectedDirection = "NONE"
+    float  detectedLevel     = na
+    string detectedType      = "NONE"
+
+    if volumeRatio > 1.2 and bodyRangeRatio < 0.35 and closePercent > 0.66
+        detectedDirection := "BUY"
+        detectedLevel     := low[1]
+        detectedType      := "ABSORPTION"
+    else if volumeRatio > 1.2 and bodyRangeRatio < 0.35 and closePercent < 0.33
+        detectedDirection := "SELL"
+        detectedLevel     := high[1]
+        detectedType      := "ABSORPTION"
+
+    if detectedDirection != "NONE" and showImbalance and not na(detectedLevel)
+        imbBox = box.new(bar_index - 2, detectedLevel, bar_index + 20, detectedLevel, 
+                         bgcolor=detectedDirection == "BUY" ? color.new(color.blue, 85) : color.new(color.red, 85), 
+                         border_color=color.new(color.white, 50), border_width=1)
+
+        safePush(imbalanceLevels, detectedLevel)
+        safePush(imbalanceDirections, detectedDirection)
+        safePush(imbalanceTypes, detectedType)
+        safePush(imbalanceActive, true)
+        safePush(imbalanceBoxes, imbBox)
+
+    detectedDirection
+
+// Add after line 1640 (after order flow functions)
+
+detectVolumeProfileLevelsLocal() =>
+    array.clear(volumeNodes)
+    array.clear(highVolumeZones)
+    array.clear(lowVolumeZones)
+    
+    if bar_index < 100
+        na
+    else
+        for i = 1 to 20
+            if i <= bar_index
+                if high[i] == ta.highest(high, 5)[i] and volume[i] > ta.sma(volume, 20)[i] * 1.5
+                    if not array.includes(highVolumeZones, high[i])
+                        array.push(highVolumeZones, high[i])
+                
+                if low[i] == ta.lowest(low, 5)[i] and volume[i] > ta.sma(volume, 20)[i] * 1.5
+                    if not array.includes(lowVolumeZones, low[i])
+                        array.push(lowVolumeZones, low[i])
+        
+        if array.size(highVolumeZones) > 0
+            sortZonesByProximity(highVolumeZones)
+        if array.size(lowVolumeZones) > 0
+            sortZonesByProximity(lowVolumeZones)
+        
+        // Add top volume zones to predictive liquidity pools
+        int highVolSize = array.size(highVolumeZones)
+        if highVolSize > 0
+            int zonesToAdd = math.min(topZones, highVolSize)
+            for i = 0 to zonesToAdd - 1
+                if i < highVolSize
+                    poc = array.get(highVolumeZones, i)
+                    if not na(poc) and not array.includes(predictiveLiquidityPools, poc)
+                        array.push(predictiveLiquidityPools, poc)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 14. MULTI-TIMEFRAME FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+getMTFConfirmationLocal() =>
+    // 1-minute momentum
+    m1Close = request.security(syminfo.tickerid, "1", close, barmerge.gaps_off, barmerge.lookahead_off)
+    m1Momentum = (m1Close - m1Close[5]) / ta.atr(14)
+    
+    // 5-minute momentum  
+    m5Close = request.security(syminfo.tickerid, "5", close, barmerge.gaps_off, barmerge.lookahead_off)
+    m5Momentum = (m5Close - m5Close[3]) / ta.atr(14)
+    
+    // 15-minute momentum (existing)
+    m15Momentum = (close - close[2]) / atrValue
+    
+    // Weighted confirmation
+    totalMomentum = m1Momentum * 0.2 + m5Momentum * 0.3 + m15Momentum * 0.5
+    aligned = math.abs(totalMomentum) > 0.8
+    direction = totalMomentum > 0 ? 1 : -1
+    
+    [aligned, direction, totalMomentum]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 15. TARGET CALCULATION FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+scoreTargetLocal(targetPrice, direction) =>
+    score = 0.0
+    float tolerance = atrValue * 0.1
+    
+    // LONG Target: Should be near Resistance ABOVE current price
+    if direction == "LONG"
+        // Check resistance levels
+        for i = 0 to array.size(criticalResistanceLevels) - 1
+            res = safeGetFloat(criticalResistanceLevels, i, na)
+            if not na(res) and math.abs(targetPrice - res) <= tolerance and targetPrice > close
+                // For resistance levels, index 'i' is correct for levelTouchCounts
+                touchCount = safeGetInt(levelTouchCounts, i, 1)
+                score := score + math.min(touchCount * 0.15, 0.5)
+                break
+    
+    // SHORT Target: Should be near Support BELOW current price  
+    if direction == "SHORT"
+        // Check support levels
+        for i = 0 to array.size(criticalSupportLevels) - 1
+            sup = safeGetFloat(criticalSupportLevels, i, na)
+            if not na(sup) and math.abs(targetPrice - sup) <= tolerance and targetPrice < close
+                // For support levels, need offset index
+                resistanceSize = array.size(criticalResistanceLevels)
+                totalIndex = resistanceSize + i
+                touchCount = safeGetInt(levelTouchCounts, totalIndex, 1)
+                score := score + math.min(touchCount * 0.15, 0.5)
+                break
+    
+    // Add penalty for wrong direction
+    if (direction == "LONG" and targetPrice <= close) or (direction == "SHORT" and targetPrice >= close)
+        score := score - 0.5  // Big penalty
+    
+    score
+
+neuralPriceProjectionLocal() =>
+    // Input features for projection
+    recentHigh = ta.highest(high, 10)
+    recentLow = ta.lowest(low, 10)
+    currentRangeLocal = recentHigh - recentLow
+    
+    // Volatility-adjusted projection
+    volatilityMultiplier = atrValue / ta.sma(atrValue, 50)
+    projectedRange = currentRangeLocal * (1.0 + volatilityMultiplier * 0.5)
+    
+    // Momentum-based extension
+    momentum = (close - close[5]) / atrValue
+    extensionFactor = 1.0 + math.abs(momentum) * 0.618  // Fibonacci-based
+    
+    // DECLARE the target variables with var
+    var float bullishTarget = na
+    var float bearishTarget = na
+    
+    // Neural network-like projection
+    if momentum > 0
+        bullishTarget := close + (projectedRange * extensionFactor * 0.618)
+        bearishTarget := close - (projectedRange * 0.382)
+    else
+        bearishTarget := close - (projectedRange * extensionFactor * 0.618)  
+        bullishTarget := close + (projectedRange * 0.382)
+    
+    // Confidence based on alignment
+    [localMlDirection, localMlConfidence, localMlProbability, currentRegime] = volatilityAdaptivePredictNextMoveLocal()
+    projectionConfidence = localMlConfidence * 0.7
+    
+    [bullishTarget, bearishTarget, projectionConfidence]
+
+calculateProbabilisticTargetsLocal() =>
+    var targets = array.new<float>()
+    var probabilities = array.new<float>()
+    var timeframes = array.new<int>()
+    
+    // Short-term (1-3 bars)
+    shortTermBull = close + (atrValue * 1.0)
+    shortTermBear = close - (atrValue * 1.0)
+    shortTermProb = 0.6
+    
+    // Medium-term (5-8 bars)  
+    medTermBull = close + (atrValue * 1.618)
+    medTermBear = close - (atrValue * 1.618)
+    medTermProb = 0.45
+    
+    // Long-term (10-15 bars)
+    longTermBull = close + (atrValue * 2.618)
+    longTermBear = close - (atrValue * 2.618) 
+    longTermProb = 0.3
+    
+    // Add to arrays
+    array.push(targets, shortTermBull)
+    array.push(probabilities, shortTermProb)
+    array.push(timeframes, 3)
+    
+    array.push(targets, shortTermBear)
+    array.push(probabilities, shortTermProb)
+    array.push(timeframes, 3)
+    
+    array.push(targets, medTermBull)
+    array.push(probabilities, medTermProb)
+    array.push(timeframes, 8)
+    
+    array.push(targets, medTermBear)
+    array.push(probabilities, medTermProb) 
+    array.push(timeframes, 8)
+    
+    array.push(targets, longTermBull)
+    array.push(probabilities, longTermProb)
+    array.push(timeframes, 15)
+    
+    array.push(targets, longTermBear)
+    array.push(probabilities, longTermProb)
+    array.push(timeframes, 15)
+    
+    [targets, probabilities, timeframes]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 16. PRICE TARGET CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+calculateFibExtensionTargetsLocal() =>
+    array.clear(fibExtensionTargets)
+    
+    // Only calculate if we have enough bars
+    if bar_index >= 25
+        // Find recent impulse moves
+        for i = 20 to 5
+            moveHigh = ta.highest(high, 5)[i]
+            moveLow = ta.lowest(low, 5)[i-5] 
+            moveSize = moveHigh - moveLow
+            
+            if moveSize > atrValue * 1.5  // Significant move
+                // Fib extension levels
+                fibLevels = array.from(0.618, 1.0, 1.618)
+                for level in fibLevels
+                    target = moveHigh + (moveSize * level)
+                    if target > close and (target - close) < atrValue * 8
+                        array.push(fibExtensionTargets, target)
+
+calculateMeasuredMoveTargetsLocal() =>
+    array.clear(measuredMoveTargets)
+    
+    // Only calculate if we have enough bars
+    if bar_index >= 50
+        // Find significant swings
+        lookback = 30
+        swings = array.new<float>()
+        
+        for i = lookback to 5
+            // Only process if we have enough historical data
+            if i <= bar_index
+                // Swing highs
+                if high[i] >= ta.highest(high, 5)[i] and high[i] > high[i-2] and high[i] > high[i+2]
+                    array.push(swings, high[i])
+                // Swing lows  
+                if low[i] <= ta.lowest(low, 5)[i] and low[i] < low[i-2] and low[i] < low[i+2]
+                    array.push(swings, low[i])
+        
+        // Calculate measured moves from most recent swings
+        if array.size(swings) >= 2
+            recentHigh = ta.highest(high, 10)
+            recentLow = ta.lowest(low, 10)
+            
+            // Bullish measured move
+            bullTarget = recentHigh + (recentHigh - recentLow)
+            if not na(bullTarget) and bullTarget > close and not array.includes(measuredMoveTargets, bullTarget)
+                array.push(measuredMoveTargets, bullTarget)
+
+calculateVolumeWeightedTargetsLocal() =>
+    array.clear(volumeWeightedTargets)
+    
+    // Use existing volume zones and swing highs
+    if array.size(highVolumeZones) > 0
+        for i = 0 to array.size(highVolumeZones) - 1
+            zone = array.get(highVolumeZones, i)
+            if zone > close and not array.includes(volumeWeightedTargets, zone)
+                array.push(volumeWeightedTargets, zone)
+    
+    if array.size(recentSwingHighs) > 0
+        for i = 0 to array.size(recentSwingHighs) - 1
+            swingHigh = array.get(recentSwingHighs, i)
+            if swingHigh > close and not array.includes(volumeWeightedTargets, swingHigh)
+                array.push(volumeWeightedTargets, swingHigh)
+
+sortTargetsByProximityLocal(targets) =>
+    if array.size(targets) > 1
+        for i = 0 to array.size(targets) - 2
+            for j = i + 1 to array.size(targets) - 1
+                distI = math.abs(close - array.get(targets, i))
+                distJ = math.abs(close - array.get(targets, j))
+                if distJ < distI
+                    // Swap targets and metadata
+                    swapArrayElements(targets, i, j)
+                    swapArrayElements(targetTypes, i, j)
+                    swapArrayElements(targetStrengths, i, j)
+                    swapArrayElements(targetSources, i, j)
+
+updatePriceTargetsLocal() =>
+    // Calculate all target types
+    calculateMeasuredMoveTargetsLocal()
+    calculateFibExtensionTargetsLocal()
+    calculateVolumeWeightedTargetsLocal()
+    
+    // Clear and combine targets
+    array.clear(priceTargets)
+    array.clear(targetTypes)
+    array.clear(targetStrengths)
+    array.clear(targetSources)
+    
+    // Add measured move targets (high confidence) - WITH BOUNDS CHECKING
+    if array.size(measuredMoveTargets) > 0
+        for i = 0 to array.size(measuredMoveTargets) - 1
+            target = array.get(measuredMoveTargets, i)
+            if not na(target)
+                array.push(priceTargets, target)
+                array.push(targetTypes, "MEASURED_MOVE")
+                array.push(targetStrengths, 0.9)
+                array.push(targetSources, "SWING_ANALYSIS")
+    
+    // Add fib extension targets (medium confidence) - WITH BOUNDS CHECKING
+    if array.size(fibExtensionTargets) > 0
+        for i = 0 to array.size(fibExtensionTargets) - 1
+            target = array.get(fibExtensionTargets, i)
+            if not na(target) and not array.includes(priceTargets, target)
+                array.push(priceTargets, target)
+                array.push(targetTypes, "FIB_EXTENSION")
+                array.push(targetStrengths, 0.7)
+                array.push(targetSources, "FIBONACCI")
+    
+    // Add volume weighted targets (high confidence) - WITH BOUNDS CHECKING
+    if array.size(volumeWeightedTargets) > 0
+        for i = 0 to array.size(volumeWeightedTargets) - 1
+            target = array.get(volumeWeightedTargets, i)
+            if not na(target) and not array.includes(priceTargets, target)
+                array.push(priceTargets, target)
+                array.push(targetTypes, "VOLUME_ZONE")
+                array.push(targetStrengths, 0.8)
+                array.push(targetSources, "VOLUME_PROFILE")
+    
+    // Only sort if we have targets
+    if array.size(priceTargets) > 0
+        sortTargetsByProximityLocal(priceTargets)
+    
+    // Limit to top 6 targets
+    while array.size(priceTargets) > 6
+        array.pop(priceTargets)
+        array.pop(targetTypes)
+        array.pop(targetStrengths)
+        array.pop(targetSources)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 17. TRADE SIGNAL GENERATION
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+generateTradeSignalLocal(mlDirInput, predictionScoreInput, positionSizeInput, bullTargetInput, bearTargetInput, longEntryInput, shortEntryInput, currentWinRateInput, dynamicThresholdInput) =>
+    
+    string signalOut = "NO TRADE"
+    string directionOut = ""
+    float entryOut = na
+    float stopOut = na
+    float targetOut = na
+    string reasonOut = ""
+
+    // 1. Minimum Threshold Check
+    float confidenceThreshold = dynamicThresholdInput
+
+    if predictionScoreInput >= dynamicThresholdInput and mlDirInput != 0
+        
+        // --- Determine Entry, Stop, and Target based on Direction ---
+        float entryOffset = atrValue * 0.1 // Small offset for entry slippage
+        
+        if mlDirInput > 0 // LONG Signal
+            // Check for immediate entry condition confirmation
+            if longEntryInput
+                // Set Entry and Stop
+                entryOut := close + atrValue * 0.1 
+                stopOut := entryOut - getVolatilityAdjustedStopDistanceLocal()
+                
+                // Use the high-scored refined target
+                if not na(bullTargetInput) and bullTargetInput > entryOut
+                    targetOut := bullTargetInput
+                else
+                    float fallbackMultiplier = 1.5
+                    targetOut := entryOut + (atrValue * fallbackMultiplier)
+
+                if not na(targetOut) and targetOut > entryOut 
+                    signalOut := "ENTRY"
+                    directionOut := "LONG"
+                    reasonOut := "ML+OF_LONG | WinRate: " + str.tostring(math.round(currentWinRateInput * 100, 1)) + "%"
+
+        else if mlDirInput < 0 // SHORT Signal
+            if shortEntryInput
+                entryOut := close - entryOffset
+                
+                // Use Volatility-Adjusted Stop Distance
+                float stopDistance = getVolatilityAdjustedStopDistanceLocal()
+                stopOut := entryOut + stopDistance
+                
+                // Use the high-scored refined target
+                if not na(bearTargetInput) and bearTargetInput < entryOut
+                    targetOut := bearTargetInput
+                else
+                    float fallbackMultiplier = 1.5
+                    targetOut := entryOut - (atrValue * fallbackMultiplier)
+                
+                if not na(targetOut) and targetOut < entryOut
+                    signalOut := "ENTRY"
+                    directionOut := "SHORT"
+                    reasonOut := "ML+OF_SHORT | WinRate: " + str.tostring(math.round(currentWinRateInput * 100, 1)) + "%"
+
+    // Return the final trade state
+    [signalOut, directionOut, entryOut, stopOut, targetOut, reasonOut]
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 18. EXECUTE PREDICTIVE LOGIC (CLEAN VERSION)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+executePredictiveLogicClean() =>
+    // --------------------------------------------------------------------------
+    // FIX: Define safety return constants
+    // --------------------------------------------------------------------------
+    float defaultPositionSize = 0.02
+    float defaultConfidence = 0.0 
+    float defaultWinRate = 0.5
+    int defaultDirection = 0
+    bool defaultBool = false
+    string defaultRegime = "NEUTRAL"
+    string defaultSignal = "NO TRADE"
+    string defaultDirectionStr = ""
+    string defaultReason = "Insufficient Data"
+    float defaultCatScore = 0.0
+    bool defaultBoolFalse = false
+    float defaultRangeComp = 1.0
+    
+    // FIX: Define a series-compatible NA float
+    float series_na_float = float(na)
+    
+    // --------------------------------------------------------------------------
+    // SAFETY CHECK: Return defaults if insufficient data
+    // --------------------------------------------------------------------------
+    if bar_index < 100 or na(close[50]) or na(volume[50])
+        // Return 20 items
+        [defaultDirection, defaultConfidence, defaultPositionSize, series_na_float, series_na_float, defaultRegime, 
+         defaultWinRate, defaultConfidence, defaultConfidence, defaultDirection, defaultConfidence, defaultBool, 
+         defaultSignal, defaultDirectionStr, series_na_float, series_na_float, series_na_float, defaultReason, 
+         series_na_float, defaultCatScore,
+         defaultBoolFalse, defaultBoolFalse, defaultBoolFalse, defaultRangeComp]
+    else
+        // 1. Get ML direction prediction
+        [localMlDirection, localMlConfidence, localMlProbability, currentRegime] = volatilityAdaptivePredictNextMoveLocal()
+        
+        // 2. Get precision timing
+        [longEntryLocal, shortEntryLocal, entryScore] = calculatePrecisionOrderFlowLocal()
+        
+        // 3. Get price projections
+        [bullTargetRaw, bearTargetRaw, projectionConfidence] = neuralPriceProjectionLocal()
+
+        float finalBullTarget = bullTargetRaw
+        float finalBearTarget = bearTargetRaw
+
+        // --------------------------------------------------------------------------
+        // TARGET SCORING LOGIC
+        // --------------------------------------------------------------------------
+        if not na(bullTargetRaw)
+            // FIX: Declare variables before using them
+            float rawScore = scoreTargetLocal(bullTargetRaw, "LONG")
+            float bestScoredLongTarget = bullTargetRaw
+            float highestLongScore = rawScore
+            array<float> allLongTargets = array.new<float>()
+            array.push(allLongTargets, bullTargetRaw)
+            
+            // Add measured move targets
+            for i = 0 to array.size(measuredMoveTargets) - 1
+                array.push(allLongTargets, safeGetFloat(measuredMoveTargets, i, na))
+            
+            // Add fib extension targets  
+            for i = 0 to array.size(fibExtensionTargets) - 1
+                array.push(allLongTargets, safeGetFloat(fibExtensionTargets, i, na))
+            
+            // Score all long targets
+            for i = 0 to array.size(allLongTargets) - 1
+                float target = array.get(allLongTargets, i)
+                if not na(target) and target > close
+                    float currentScore = scoreTargetLocal(target, "LONG")
+                    if currentScore > highestLongScore
+                        highestLongScore := currentScore
+                        bestScoredLongTarget := target
+            finalBullTarget := bestScoredLongTarget
+        
+        if not na(bearTargetRaw)
+            // FIX: Declare variables before using them
+            float rawScore = scoreTargetLocal(bearTargetRaw, "SHORT")
+            float bestScoredShortTarget = bearTargetRaw
+            float highestShortScore = rawScore
+            array<float> allShortTargets = array.new<float>()
+            array.push(allShortTargets, bearTargetRaw)
+            
+            // Add measured move targets
+            for i = 0 to array.size(measuredMoveTargets) - 1
+                array.push(allShortTargets, safeGetFloat(measuredMoveTargets, i, na))
+            
+            // Add fib extension targets
+            for i = 0 to array.size(fibExtensionTargets) - 1
+                array.push(allShortTargets, safeGetFloat(fibExtensionTargets, i, na))
+            
+            // Score all short targets
+            for i = 0 to array.size(allShortTargets) - 1
+                float target = array.get(allShortTargets, i)
+                if not na(target) and target < close
+                    float currentScore = scoreTargetLocal(target, "SHORT")
+                    if currentScore > highestShortScore
+                        highestShortScore := currentScore
+                        bestScoredShortTarget := target
+            finalBearTarget := bestScoredShortTarget
+        
+        // 5. Get probabilistic targets
+        [probTargets, probProbabilities, probTimeframes] = calculateProbabilisticTargetsLocal()
+        
+        // 6. Calculate trading edge (LOCAL values)
+        [localWinRate, localExpectancy, localSharpe, localTotalTradesCount, localAvgWin] = calculateTradingEdgeLocal()
+        
+        // FIX: Use separate variable name to avoid conflict
+        float positionSizeLocal = maxRiskPercent
+        
+        // 7. Advanced regime detection
+        [advancedRegimeLocal, trendStrengthLocal, volRatio] = detectAdvancedRegimesLocal()
+
+        // FIX: Use different variable name
+        float currentWinRateLocal = calculateCurrentWinRateLocal()
+
+        // NOTE: Requires external variables lastRetrainBar and retrainInterval
+        bool needsRetrainLocal = false
+        if bar_index - globalLastRetrainBar >= retrainInterval and currentWinRateLocal < 0.6
+            needsRetrainLocal := true
+
+        // 8. Composite prediction score
+        float normalizedConfidence = localMlConfidence 
+        float normalizedEntry = math.min(math.abs(entryScore), 1.0)
+        float normalizedTrend = math.min(trendStrengthLocal / 2.0, 1.0)
+        float normalizedExpectancy = math.min(math.max(localExpectancy, 0) * 2.0, 1.0)
+
+        float predictionScoreLocal = (normalizedConfidence * 0.3) + (normalizedEntry * 0.2) + (normalizedTrend * 0.2) + (normalizedExpectancy * 0.3)
+
+        // Calculate dynamic threshold
+        float scoreMeanEma = ta.ema(predictionScoreLocal, 200)
+        float scoreStd = ta.stdev(predictionScoreLocal, 200)
+        scoreStd := na(scoreStd) ? 0.0 : scoreStd
+        float cv = 0.0
+        if scoreMeanEma > 0.001 
+            cv := scoreStd / scoreMeanEma
+        else
+            cv := 1.0
+        
+        float adaptiveMultiplier = 1.0
+        if cv > 2.5
+            adaptiveMultiplier := 3.0
+        else if cv > 1.5
+            adaptiveMultiplier := 2.2
+        else if cv > 0.8
+            adaptiveMultiplier := 1.8
+        else if cv > 0.3
+            adaptiveMultiplier := 1.4
+        else
+            adaptiveMultiplier := 1.2
+        
+        float dynamicThreshold = scoreMeanEma + (scoreStd * adaptiveMultiplier)
+        
+        // Apply minimum thresholds based on scoreMeanEma
+        if scoreMeanEma < 0.05
+            dynamicThreshold := math.max(dynamicThreshold, 0.18)
+        else if scoreMeanEma < 0.15
+            dynamicThreshold := math.max(dynamicThreshold, 0.25)
+        else if scoreMeanEma < 0.25
+            dynamicThreshold := math.max(dynamicThreshold, 0.35)
+        else if scoreMeanEma < 0.4
+            dynamicThreshold := math.max(dynamicThreshold, 0.45)
+        else
+            dynamicThreshold := math.max(dynamicThreshold, 0.55)
+        
+        dynamicThreshold := math.max(0.15, math.min(0.85, dynamicThreshold))
+        
+        // ============================================================
+        // NEW: COMPRESSION CATALYST ENHANCEMENT
+        // ============================================================
+        [enhancedPredScore, enhancedPosSize, enhancedBullTarget, enhancedBearTarget, 
+         shouldTradeCat, catScoreLocal, extremeCompLocal, highCompLocal, volumeSpikeLocal, rangeCompLocal] = 
+         enhanceTradeWithCompressionLocal(predictionScoreLocal, positionSizeLocal, finalBullTarget, finalBearTarget)
+        
+        // Store base values for display
+        float displayBullTarget = finalBullTarget
+        float displayBearTarget = finalBearTarget
+        float displayPositionSize = positionSizeLocal
+        float displayPredScore = predictionScoreLocal
+        
+        // Apply enhancement if catalyst approves
+        string finalSignal = "NO TRADE"
+        string finalDirection = ""
+        float finalEntry = na
+        float finalStop = na
+        float finalTarget = na
+        string finalReason = "No Compression Catalyst"
+        
+        if shouldTradeCat
+            float predictionScoreEnhanced = enhancedPredScore
+            float positionSizeEnhanced = enhancedPosSize
+            finalBullTarget := enhancedBullTarget
+            finalBearTarget := enhancedBearTarget
+            
+            // Generate trade signal with ENHANCED values
+            [signalResult, directionResult, entryResult, stopResult, targetResult, reasonResult] = generateTradeSignalLocal(localMlDirection, predictionScoreEnhanced, positionSizeEnhanced, finalBullTarget, finalBearTarget, longEntryLocal, shortEntryLocal, currentWinRateLocal, dynamicThreshold)
+
+            finalSignal := signalResult
+            finalDirection := directionResult
+            finalEntry := entryResult
+            finalStop := stopResult
+            finalTarget := targetResult
+            finalReason := reasonResult
+
+            // Append compression info to reason
+            string compressionInfo = " | Cat: " + str.tostring(catScoreLocal) + 
+                                  (extremeCompLocal ? " 🚀" : highCompLocal ? " ⚡" : "") + 
+                                  (volumeSpikeLocal ? " 🔊" : "") + 
+                                  " (" + str.tostring(rangeCompLocal, "#.##") + ")"
+            finalReason := finalReason + compressionInfo
+        else
+            // No trade - keep values for display only
+            finalSignal := "NO TRADE"
+            finalDirection := ""
+            finalEntry := na
+            finalStop := na
+            finalTarget := na
+            finalReason := "No Compression Catalyst | Cat: " + str.tostring(catScoreLocal) + 
+                         (extremeCompLocal ? " 🚀" : highCompLocal ? " ⚡" : "") + 
+                         (volumeSpikeLocal ? " 🔊" : "") + 
+                         " (" + str.tostring(rangeCompLocal, "#.##") + ")"
+        
+        // 10. Return all predictive data values
+        // Always return display values for AI Bull/Bear Targets
+        [int(localMlDirection), float(displayPredScore), float(displayPositionSize), 
+         float(displayBullTarget), float(displayBearTarget), string(advancedRegimeLocal), 
+         float(localWinRate), float(localExpectancy), float(localSharpe), int(localTotalTradesCount), 
+         float(localAvgWin), bool(needsRetrainLocal), string(finalSignal), string(finalDirection), 
+         float(finalEntry), float(finalStop), float(finalTarget), string(finalReason), 
+         float(dynamicThreshold), float(catScoreLocal),
+         bool(extremeCompLocal), bool(highCompLocal), bool(volumeSpikeLocal), float(rangeCompLocal)]
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 20. VISUALIZATION FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+drawFVGBoxes() =>
+    if showFVG
+        for i = 0 to array.size(fvgBoxes) - 1
+            if getFvgActive(i)
+                fvgTop = getFvgHigh(i)
+                fvgBottom = getFvgLow(i)
+                isBullish = getFvgBullish(i)
+                if not na(fvgTop) and not na(fvgBottom)
+                    boxColor = isBullish ? color.new(color.green, 85) : color.new(color.red, 85)
+                    box.set_bgcolor(array.get(fvgBoxes, i), boxColor)
+                    box.set_left(array.get(fvgBoxes, i), bar_index - fvgLookback * 3)
+                    box.set_right(array.get(fvgBoxes, i), bar_index + fvgLookback * 3)
+
+drawZones() =>
+    if safeSize(allZoneBoxes) > 0
+        for i = 0 to safeSize(allZoneBoxes) - 1
+            box zoneBox = array.get(allZoneBoxes, i)
+            if not na(zoneBox)
+                box.set_left(zoneBox, bar_index - 20)
+                box.set_right(zoneBox, bar_index + 20)
+
+drawExhaustionSignals() =>
+    if showExhaustion
+        // Clean old exhaustion boxes
+        for i = 0 to array.size(exhaustionBoxes) - 1
+            box exhBox = safeGetBox(exhaustionBoxes, i)
+            if not na(exhBox)
+                box.delete(exhBox)
+        array.clear(exhaustionBoxes)
+        
+        // Clean old labels
+        for i = 0 to array.size(exhaustionLabels) - 1
+            label lbl = safeGetLabel(exhaustionLabels, i)
+            if not na(lbl)
+                label.delete(lbl)
+        array.clear(exhaustionLabels)
+        
+        // Draw new exhaustion signals
+        for i = 0 to array.size(exhaustionSignals) - 1
+            if i < array.size(exhaustionLevels)
+                level = safeGetFloat(exhaustionLevels, i)
+                direction = safeGetString(exhaustionDirections, i)
+                signalType = safeGetString(exhaustionSignals, i)
+                strength = safeGetInt(exhaustionStrengths, i)
+                
+                if not na(level)
+                    // Create exhaustion box
+                    boxColor = direction == "BULLISH" ? color.new(color.green, 80) : color.new(color.red, 80)
+                    exhBox = box.new(bar_index - 2, level, bar_index + 15, level, 
+                                   bgcolor=boxColor, border_color=color.white, border_width=2)
+                    safePush(exhaustionBoxes, exhBox)
+                    
+                    // Create label
+                    labelText = signalType + " " + direction + " (" + str.tostring(strength) + ")"
+                    labelColor = direction == "BULLISH" ? color.green : color.red
+                    lbl = label.new(bar_index, level, labelText, 
+                                  color=labelColor, textcolor=color.white, 
+                                  style=label.style_label_center, yloc=yloc.price)
+                    safePush(exhaustionLabels, lbl)
+
+drawPriceTargets() =>
+    // Add comprehensive safety checks
+    if array.size(priceTargets) == 0 or bar_index < 10
+        na  // Exit early if no targets or on early bars
+    
+    // Limit to prevent excessive drawing
+    maxTargetsToDraw = 6
+    targetsToProcess = math.min(array.size(priceTargets), maxTargetsToDraw)
+    
+    for i = 0 to targetsToProcess - 1
+        // Add bounds checking for all arrays
+        if i < array.size(priceTargets) and i < array.size(targetTypes) and i < array.size(targetStrengths)
+            targetLevel = safeGetFloat(priceTargets, i)
+            targetType = safeGetString(targetTypes, i)
+            strength = safeGetFloat(targetStrengths, i)
+            
+            if not na(targetLevel) and targetLevel > 0
+                // Color coding
+                color targetColor = color.blue
+                if targetType == "MEASURED_MOVE"
+                    targetColor := color.purple
+                else if targetType == "FIB_EXTENSION"
+                    targetColor := color.orange  
+                else if targetType == "VOLUME_ZONE"
+                    targetColor := color.green
+                
+                // Draw target line with safety
+                lineColor = color.new(targetColor, 70)
+                if not na(lineColor)
+                    line.new(bar_index - 5, targetLevel, bar_index + 20, targetLevel,
+                             color=lineColor, width=2, style=line.style_dashed)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 21. TABLE UPDATE FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+
+// Initialize weights
+initializeWeights() =>
+    // ========================================
+    // FIXED: SMART WEIGHT INITIALIZATION
+    // ========================================
+    
+    // ALWAYS start fresh when weights are empty OR performance is terrible
+    bool shouldReset = array.size(adaptiveWeights) == 0 or 
+                      (globalTotalTradesCount > 20 and globalWinRate < 0.3)
+    
+    if shouldReset
+        // Clear any existing poisoned weights
+        array.clear(adaptiveWeights)
+        
+        // Start with NEUTRAL, EQUAL weights regardless of regime
+        array.push(adaptiveWeights, 0.1429)  // Price momentum (1/7)
+        array.push(adaptiveWeights, 0.1429)  // Volume strength (1/7)
+        array.push(adaptiveWeights, 0.1429)  // Volatility regime (1/7)
+        array.push(adaptiveWeights, 0.1429)  // RSI position (1/7)
+        array.push(adaptiveWeights, 0.1429)  // Market structure (1/7)
+        array.push(adaptiveWeights, 0.1429)  // Mean reversion (1/7)
+        array.push(adaptiveWeights, 0.1429)  // Breakout potential (1/7)
+        
+        if debugMode
+            debugLog("✅ Weights RESET to equal: " + str.tostring(array.get(adaptiveWeights, 0), "#.####") + " each")
+            
+            // Log if reset was triggered by poor performance
+            if globalTotalTradesCount > 20 and globalWinRate < 0.3
+                debugLog("⚠️ Reset triggered by poor performance: WR=" + str.tostring(globalWinRate * 100, "#.#") + "%")
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// ENHANCED TABLE SYSTEM - TRADER-FOCUSED DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 1. MAIN DASHBOARD - Top-Level Decision Making
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// ENHANCED TABLE SYSTEM - TRADER-FOCUSED DASHBOARD (CORRECTED)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+
+// Helper function for creating header cells
+createHeader(tableObj, row, headerText, width=2) =>
+    for col = 0 to width - 1
+        table.cell(tableObj, col, row, col == 0 ? headerText : "", 
+                  text_color=color.white, bgcolor=color.purple)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 1. MAIN DASHBOARD - Top-Level Decision Making
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+updateMainDashboard() =>
+    if showMainDashboard and not na(mainDashboard)
+        // Clear and setup header - using multi-cell approach
+        for col = 0 to 4
+            table.cell(mainDashboard, col, 0, col == 0 ? "🎯 TRADING DASHBOARD" : "", 
+                      text_color=color.white, bgcolor=color.purple)
+        
+        // Row 1-2: Market Bias & Confidence
+        table.cell(mainDashboard, 0, 1, "MARKET BIAS", text_color=color.yellow)
+        biasText = globalCombinedBias == 1 ? "BULLISH 🟢" : 
+                  globalCombinedBias == -1 ? "BEARISH 🔴" : "NEUTRAL ⚪"
+        biasColor = globalCombinedBias == 1 ? color.green : 
+                   globalCombinedBias == -1 ? color.red : color.gray
+        table.cell(mainDashboard, 1, 1, biasText, text_color=biasColor)
+        
+        table.cell(mainDashboard, 0, 2, "Confidence", text_color=color.yellow)
+        confColor = globalHighConfidence ? color.lime : 
+                   globalMediumConfidence ? color.orange : color.red
+        table.cell(mainDashboard, 1, 2, globalConfidenceText, text_color=confColor)
+        
+        // Row 3-4: Market Phase & Readiness
+        table.cell(mainDashboard, 0, 3, "MARKET PHASE", text_color=color.yellow)
+        phaseColor = globalMarketPhase == "MARKUP" ? color.green : 
+                     globalMarketPhase == "MARKDOWN" ? color.red : 
+                     globalMarketPhase == "ACCUMULATION" ? color.blue : 
+                     globalMarketPhase == "DISTRIBUTION" ? color.orange : color.gray
+        table.cell(mainDashboard, 1, 3, globalMarketPhase, text_color=phaseColor)
+        
+        table.cell(mainDashboard, 0, 4, "Market Ready", text_color=color.yellow)
+        readyColor = globalMarketReady ? color.green : color.red
+        table.cell(mainDashboard, 1, 4, globalMarketReady ? "READY ✅" : "NOT READY ⛔", text_color=readyColor)
+        
+        // Row 5-6: AI Predictions
+        table.cell(mainDashboard, 0, 5, "AI PREDICTION", text_color=color.yellow)
+        aiDirection = globalMLDirection == 1 ? "LONG 🟢" : 
+                     globalMLDirection == -1 ? "SHORT 🔴" : "NEUTRAL ⚪"
+        aiColor = globalMLDirection == 1 ? color.green : 
+                 globalMLDirection == -1 ? color.red : color.gray
+        table.cell(mainDashboard, 1, 5, aiDirection, text_color=aiColor)
+        
+        table.cell(mainDashboard, 0, 6, "Prediction Score", text_color=color.yellow)
+        scoreColor = globalPredictionScore > 0.7 ? color.lime : 
+                     globalPredictionScore > 0.5 ? color.orange : color.red
+        table.cell(mainDashboard, 1, 6, str.tostring(globalPredictionScore * 100, "#.#") + "%", text_color=scoreColor)
+        
+        // Row 7-8: Compression Catalyst
+        table.cell(mainDashboard, 0, 7, "CATALYST SCORE", text_color=color.yellow)
+        catColor = globalCatScore > 80 ? color.purple :
+                   globalCatScore > 70 ? color.blue :
+                   globalCatScore > 60 ? color.green :
+                   globalCatScore > 50 ? color.orange : color.red
+        catText = str.tostring(globalCatScore) + 
+                 (globalExtremeComp ? " 🚀" : globalHighComp ? " ⚡" : "") +
+                 (globalVolumeSpike ? " 🔊" : "")
+        table.cell(mainDashboard, 1, 7, catText, text_color=catColor)
+        
+        // Row 9-10: Trade Signals
+        table.cell(mainDashboard, 0, 8, "TRADE SIGNAL", text_color=color.yellow)
+        signalColor = globalTradeSignal == "ENTRY" ? 
+                     (globalTradeDirection == "LONG" ? color.green : color.red) : color.gray
+        signalText = globalTradeSignal == "ENTRY" ? 
+                     (globalTradeDirection == "LONG" ? "LONG 🟢" : "SHORT 🔴") : "NO TRADE ⏸️"
+        table.cell(mainDashboard, 1, 8, signalText, text_color=signalColor)
+        
+        table.cell(mainDashboard, 0, 9, "Signal Reason", text_color=color.yellow)
+        table.cell(mainDashboard, 1, 9, globalTradeReason, text_color=color.white)
+        
+        // Row 11-12: Key Levels
+        table.cell(mainDashboard, 0, 10, "NEXT BULL TARGET", text_color=color.yellow)
+        bullTgtText = not na(globalBullTarget) ? str.tostring(globalBullTarget, "#.####") : "N/A"
+        table.cell(mainDashboard, 1, 10, bullTgtText, text_color=color.green)
+        
+        table.cell(mainDashboard, 0, 11, "NEXT BEAR TARGET", text_color=color.yellow)
+        bearTgtText = not na(globalBearTarget) ? str.tostring(globalBearTarget, "#.####") : "N/A"
+        table.cell(mainDashboard, 1, 11, bearTgtText, text_color=color.red)
+        
+        // Row 13-14: Structure Grade
+        table.cell(mainDashboard, 0, 12, "STRUCTURE GRADE", text_color=color.yellow)
+        gradeColor = globalFinalGrade == "A+" ? color.lime : 
+                     globalFinalGrade == "A" ? color.green : 
+                     globalFinalGrade == "B+" ? color.orange : 
+                     globalFinalGrade == "B" ? color.yellow : color.red
+        table.cell(mainDashboard, 1, 12, globalFinalGrade, text_color=gradeColor)
+        
+        table.cell(mainDashboard, 0, 13, "FVG Active", text_color=color.yellow)
+        fvgText = str.tostring(globalActiveBull) + "B / " + str.tostring(globalActiveBear) + "S"
+        table.cell(mainDashboard, 1, 13, fvgText, text_color=color.blue)
+        
+        // Row 15: Win Rate
+        table.cell(mainDashboard, 0, 14, "WIN RATE", text_color=color.yellow)
+        wrColor = globalWinRate > 0.6 ? color.lime : 
+                 globalWinRate > 0.5 ? color.orange : color.red
+        table.cell(mainDashboard, 1, 14, str.tostring(math.round(globalWinRate * 100, 1)) + "%", text_color=wrColor)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 2. TRADING EDGE TABLE - Risk/Reward Analytics
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+updateTradingEdgeTable() =>
+    if showTradingEdge and not na(tradingEdgeTable)
+        // Header - multi-cell approach
+        for col = 0 to 3
+            table.cell(tradingEdgeTable, col, 0, col == 0 ? "🎯 TRADING EDGE" : "", 
+                      text_color=color.white, bgcolor=color.purple)
+        
+        // Risk Metrics
+        table.cell(tradingEdgeTable, 0, 1, "Win Rate", text_color=color.white)
+        wrEdgeColor = globalWinRate > 0.6 ? color.lime : 
+                     globalWinRate > 0.5 ? color.orange : color.red
+        table.cell(tradingEdgeTable, 1, 1, str.tostring(math.round(globalWinRate * 100, 1)) + "%", text_color=wrEdgeColor)
+        
+        table.cell(tradingEdgeTable, 0, 2, "Expectancy", text_color=color.white)
+        expColor = globalExpectancy > 0.2 ? color.lime : 
+                  globalExpectancy > 0.1 ? color.orange : color.red
+        table.cell(tradingEdgeTable, 1, 2, str.tostring(globalExpectancy, "#.###"), text_color=expColor)
+        
+        table.cell(tradingEdgeTable, 0, 3, "Sharpe Ratio", text_color=color.white)
+        sharpeColor = globalSharpe > 1.0 ? color.lime : 
+                     globalSharpe > 0.5 ? color.orange : color.red
+        table.cell(tradingEdgeTable, 1, 3, str.tostring(globalSharpe, "#.##"), text_color=sharpeColor)
+        
+        table.cell(tradingEdgeTable, 0, 4, "Total Trades", text_color=color.white)
+        table.cell(tradingEdgeTable, 1, 4, str.tostring(globalTotalTrades), text_color=color.yellow)
+        
+        table.cell(tradingEdgeTable, 0, 5, "Avg Win %", text_color=color.white)
+        table.cell(tradingEdgeTable, 1, 5, str.tostring(globalAvgWin * 100, "#.#") + "%", text_color=color.green)
+        
+        // Position Sizing
+        table.cell(tradingEdgeTable, 0, 6, "Position Size", text_color=color.white)
+        table.cell(tradingEdgeTable, 1, 6, str.tostring(globalPositionSize * 100, "#.#") + "%", text_color=color.blue)
+        
+        // Entry Quality
+        table.cell(tradingEdgeTable, 0, 7, "Entry Score", text_color=color.white)
+        entryColor = globalEntryScore > 0.7 ? color.lime : 
+                     globalEntryScore > 0.5 ? color.orange : color.red
+        table.cell(tradingEdgeTable, 1, 7, str.tostring(globalEntryScore, "#.##"), text_color=entryColor)
+        
+        // Current Trade
+        table.cell(tradingEdgeTable, 0, 8, "Entry Price", text_color=color.white)
+        table.cell(tradingEdgeTable, 1, 8, not na(globalEntryPrice) ? str.tostring(globalEntryPrice, "#.####") : "N/A", text_color=color.maroon)  // FIXED: Removed space
+        
+        table.cell(tradingEdgeTable, 0, 9, "Stop Loss", text_color=color.white)
+        table.cell(tradingEdgeTable, 1, 9, not na(globalStopPrice) ? str.tostring(globalStopPrice, "#.####") : "N/A", text_color=color.red)
+        
+        table.cell(tradingEdgeTable, 0, 10, "Take Profit", text_color=color.white)
+        table.cell(tradingEdgeTable, 1, 10, not na(globalTargetPrice) ? str.tostring(globalTargetPrice, "#.####") : "N/A", text_color=color.green)   
+        // Risk/Reward
+        if not na(globalEntryPrice) and not na(globalStopPrice) and not na(globalTargetPrice)
+            risk = math.abs(globalEntryPrice - globalStopPrice)
+            reward = math.abs(globalTargetPrice - globalEntryPrice)
+            rrRatio = reward / risk
+            table.cell(tradingEdgeTable, 0, 11, "R/R Ratio", text_color=color.white)
+            rrColor = rrRatio > 2.0 ? color.lime : 
+                     rrRatio > 1.5 ? color.orange : color.red
+            table.cell(tradingEdgeTable, 1, 11, str.tostring(rrRatio, "#.#") + ":1", text_color=rrColor)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 3. LEVELS MONITOR - Support/Resistance & Price Action
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+updateLevelsMonitor() =>
+    if showLevelsMonitor and not na(levelsMonitorTable)
+        // Header
+        for col = 0 to 4
+            table.cell(levelsMonitorTable, col, 0, col == 0 ? "📈 LEVELS MONITOR" : "", 
+                      text_color=color.white, bgcolor=color.blue)
+        
+        table.cell(levelsMonitorTable, 0, 1, "Level", text_color=color.yellow)
+        table.cell(levelsMonitorTable, 1, 1, "Type", text_color=color.yellow)
+        table.cell(levelsMonitorTable, 2, 1, "Distance", text_color=color.yellow)
+        table.cell(levelsMonitorTable, 3, 1, "Status", text_color=color.yellow)
+        
+        // Get nearest levels from price action
+        [nearestSupport, nearestResistance] = getNearestCriticalLevelsLocal()
+        
+        int row = 2
+        
+        // Resistance Levels
+        if not na(nearestResistance)
+            distanceATR = (nearestResistance - close) / atrValue
+            distancePct = ((nearestResistance - close) / close) * 100
+            var string status = "WATCHING"  // Declare and initialize
+            status := distanceATR < 1.0 ? "NEAR ⚠️" : "WATCHING"  // Then assign
+
+            table.cell(levelsMonitorTable, 0, row, str.tostring(nearestResistance, "#.####"), text_color=color.red)
+            table.cell(levelsMonitorTable, 1, row, "RESISTANCE", text_color=color.red)
+            table.cell(levelsMonitorTable, 2, row, str.tostring(distanceATR, "#.#") + " ATR", 
+                      text_color=distanceATR < 1.0 ? color.orange : color.white)
+            table.cell(levelsMonitorTable, 3, row, status, 
+                      text_color=distanceATR < 1.0 ? color.orange : color.gray)
+            row += 1
+        
+        // Support Levels
+        if not na(nearestSupport)
+            distanceATR = (close - nearestSupport) / atrValue
+            distancePct = ((close - nearestSupport) / close) * 100
+            //var string status = "WATCHING"
+            status = distanceATR < 1.0 ? "NEAR ⚠️" : "WATCHING"
+            
+            table.cell(levelsMonitorTable, 0, row, str.tostring(nearestSupport, "#.####"), text_color=color.green)
+            table.cell(levelsMonitorTable, 1, row, "SUPPORT", text_color=color.green)
+            table.cell(levelsMonitorTable, 2, row, str.tostring(distanceATR, "#.#") + " ATR", 
+                      text_color=distanceATR < 1.0 ? color.orange : color.white)
+            table.cell(levelsMonitorTable, 3, row, status, 
+                      text_color=distanceATR < 1.0 ? color.orange : color.gray)
+            row += 1
+        
+        // Show top 5 price targets
+        if array.size(priceTargets) > 0
+            table.cell(levelsMonitorTable, 0, row, "🎯 PRICE TARGETS", text_color=color.purple)
+            row += 1
+            
+            for i = 0 to math.min(4, array.size(priceTargets) - 1)
+                if i < array.size(priceTargets) and i < array.size(targetTypes)
+                    target = safeGetFloat(priceTargets, i)
+                    targetType = safeGetString(targetTypes, i)
+                    if not na(target)
+                        direction = target > close ? "ABOVE" : "BELOW"
+                        distance = math.abs(target - close) / atrValue
+                        //var string status = "DISTANT"
+                        status = distance < 2.0 ? "APPROACHING" : "DISTANT"
+                        
+                        table.cell(levelsMonitorTable, 0, row, str.tostring(target, "#.####"), 
+                                  text_color=target > close ? color.green : color.red)
+                        table.cell(levelsMonitorTable, 1, row, targetType, text_color=color.blue)
+                        table.cell(levelsMonitorTable, 2, row, str.tostring(distance, "#.#") + " ATR", 
+                                  text_color=distance < 2.0 ? color.orange : color.white)
+                        table.cell(levelsMonitorTable, 3, row, status, 
+                                  text_color=distance < 2.0 ? color.orange : color.gray)
+                        row += 1
+        
+        // Show breach/bounce levels if active
+        if not na(globalLastBreachedLevel)
+            table.cell(levelsMonitorTable, 0, row, "⚠️ BREACHED LEVEL", text_color=color.orange)
+            row += 1
+            
+            breachDirection = globalBreachBias == 1 ? "BULLISH" : "BEARISH"
+            bounceText = globalBounceQuality
+            
+            table.cell(levelsMonitorTable, 0, row, str.tostring(globalLastBreachedLevel, "#.####"), 
+                      text_color=globalBreachBias == 1 ? color.green : color.red)
+            table.cell(levelsMonitorTable, 1, row, breachDirection, 
+                      text_color=globalBreachBias == 1 ? color.green : color.red)
+            table.cell(levelsMonitorTable, 2, row, "BREACHED", text_color=color.red)
+            table.cell(levelsMonitorTable, 3, row, bounceText, 
+                       text_color=globalBounceQuality == "WEAK_BOUNCE" ? color.red : 
+                                 globalBounceQuality == "STRONG_REVERSAL" ? color.green : color.orange)
+            row += 1
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 4. FVG MONITOR - Fair Value Gap Analysis
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+updateFVGTracker() =>
+    if showFVGMonitor and not na(fvgMonitorTable)
+        // Header
+        for col = 0 to 4
+            table.cell(fvgMonitorTable, col, 0, col == 0 ? "🔄 FVG MONITOR" : "", 
+                      text_color=color.white, bgcolor=color.green)
+        
+        table.cell(fvgMonitorTable, 0, 1, "Level", text_color=color.yellow)
+        table.cell(fvgMonitorTable, 1, 1, "Type", text_color=color.yellow)
+        table.cell(fvgMonitorTable, 2, 1, "Distance", text_color=color.yellow)
+        table.cell(fvgMonitorTable, 3, 1, "Status", text_color=color.yellow)
+        
+        int row = 2
+        int fvgCount = 0
+        
+        // Track nearest FVGs (max 5)
+        if array.size(fvgBoxes) > 0
+            // Sort FVGs by proximity to price
+            var fvgArray = array.new<float>()
+            var fvgTypes = array.new<string>()
+            var fvgDistances = array.new<float>()
+            
+            for i = 0 to array.size(fvgBoxes) - 1
+                if getFvgActive(i)
+                    fvgLevel = getFvgBullish(i) ? getFvgLow(i) : getFvgHigh(i)
+                    if not na(fvgLevel)
+                        distance = math.abs(close - fvgLevel)
+                        array.push(fvgArray, fvgLevel)
+                        array.push(fvgTypes, getFvgBullish(i) ? "BULLISH" : "BEARISH")
+                        array.push(fvgDistances, distance)
+            
+            // Sort by distance
+            if array.size(fvgArray) > 1
+                for i = 0 to array.size(fvgArray) - 2
+                    for j = i + 1 to array.size(fvgArray) - 1
+                        if array.get(fvgDistances, j) < array.get(fvgDistances, i)
+                            // Swap
+                            tempLevel = array.get(fvgArray, i)
+                            array.set(fvgArray, i, array.get(fvgArray, j))
+                            array.set(fvgArray, j, tempLevel)
+                            
+                            tempType = array.get(fvgTypes, i)
+                            array.set(fvgTypes, i, array.get(fvgTypes, j))
+                            array.set(fvgTypes, j, tempType)
+                            
+                            tempDist = array.get(fvgDistances, i)
+                            array.set(fvgDistances, i, array.get(fvgDistances, j))
+                            array.set(fvgDistances, j, tempDist)
+            
+            // Display top 5 FVGs
+            for i = 0 to math.min(4, array.size(fvgArray) - 1)
+                if i < array.size(fvgArray)
+                    fvgLevel = array.get(fvgArray, i)
+                    fvgType = array.get(fvgTypes, i)
+                    distance = array.get(fvgDistances, i)
+                    distanceATR = distance / atrValue
+                    var string status = "ACTIVE"
+                    var color statusColor = color.green
+
+                    // Determine status
+                    if distanceATR < 0.5
+                        status := "IMMINENT 🚨"
+                        statusColor = color.red
+                    else if distanceATR < 1.0
+                        status := "NEAR ⚠️"
+                        statusColor = color.orange
+                    else
+                        status := "ACTIVE"
+                        statusColor = color.green
+                    
+                    table.cell(fvgMonitorTable, 0, row, str.tostring(fvgLevel, "#.####"), 
+                              text_color=fvgType == "BULLISH" ? color.green : color.red)
+                    table.cell(fvgMonitorTable, 1, row, fvgType, 
+                              text_color=fvgType == "BULLISH" ? color.green : color.red)
+                    table.cell(fvgMonitorTable, 2, row, str.tostring(distanceATR, "#.#") + " ATR", 
+                              text_color=distanceATR < 1.0 ? color.orange : color.white)
+                    table.cell(fvgMonitorTable, 3, row, status, text_color=statusColor)
+                    
+                    row += 1
+                    fvgCount += 1
+        
+        // Summary row
+        if fvgCount == 0
+            table.cell(fvgMonitorTable, 0, row, "No active FVGs", text_color=color.gray)
+        else
+            table.cell(fvgMonitorTable, 0, row, "Total Active", text_color=color.white)
+            table.cell(fvgMonitorTable, 1, row, str.tostring(globalActiveBull) + "B/" + str.tostring(globalActiveBear) + "S", 
+                      text_color=color.blue)
+            table.cell(fvgMonitorTable, 2, row, "FVG Count: " + str.tostring(fvgCount), text_color=color.white)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 5. MARKET CONTEXT TABLE - Regime & Environment
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+updateMarketContextTable() =>
+    if showMarketContext and not na(marketContextTable)
+        // Header
+        for col = 0 to 3
+            table.cell(marketContextTable, col, 0, col == 0 ? "🌐 MARKET CONTEXT" : "", 
+                      text_color=color.white, bgcolor=color.orange)
+        
+        // Volatility Regime
+        table.cell(marketContextTable, 0, 1, "Volatility", text_color=color.white)
+        volColor = globalVolatilityRegime == "HIGH_VOL_EXPANSION" ? color.red :
+                  globalVolatilityRegime == "LOW_VOL_CONTRACTION" ? color.green : 
+                  globalVolatilityRegime == "MEDIUM_VOL_EXPANSION" ? color.orange : color.gray
+        table.cell(marketContextTable, 1, 1, globalVolatilityRegime, text_color=volColor)
+        
+        // Advanced Regime
+        table.cell(marketContextTable, 0, 2, "Market Regime", text_color=color.white)
+        advColor = str.contains(globalAdvancedRegime, "BULL") ? color.green :
+                  str.contains(globalAdvancedRegime, "BEAR") ? color.red : color.blue
+        table.cell(marketContextTable, 1, 2, globalAdvancedRegime, text_color=advColor)
+        
+        // Range Analysis
+        table.cell(marketContextTable, 0, 3, "Range Ratio", text_color=color.white)
+        rangeRatio = globalCurrentRange / math.max(globalAvgRange, syminfo.mintick)
+        rangeColor = rangeRatio > 1.3 ? color.red :
+                     rangeRatio < 0.7 ? color.green : color.orange
+        table.cell(marketContextTable, 1, 3, str.tostring(rangeRatio, "#.##"), text_color=rangeColor)
+        
+        // Volume Analysis
+        table.cell(marketContextTable, 0, 4, "Volume", text_color=color.white)
+        volumeRatio = volume / math.max(globalAvgVolume20, 1)
+        volumeText = volumeRatio > 1.5 ? "HIGH 🔊" :
+                     volumeRatio > 1.2 ? "MEDIUM" :
+                     volumeRatio < 0.8 ? "LOW 🔇" : "NORMAL"
+        volumeColor = volumeRatio > 1.5 ? color.red :
+                     volumeRatio > 1.2 ? color.orange :
+                     volumeRatio < 0.8 ? color.green : color.gray
+        table.cell(marketContextTable, 1, 4, volumeText, text_color=volumeColor)
+        
+        // Trend Indicators
+        table.cell(marketContextTable, 0, 5, "RSI", text_color=color.white)
+        rsiColor = rsi > 70 ? color.red :
+                  rsi < 30 ? color.green :
+                  rsi > 60 ? color.orange :
+                  rsi < 40 ? color.lime : color.gray
+        table.cell(marketContextTable, 1, 5, str.tostring(rsi, "#.#"), text_color=rsiColor)
+        
+        table.cell(marketContextTable, 0, 6, "MACD", text_color=color.white)
+        macdColor = macdLine > signalLine ? color.green : color.red
+        macdText = macdLine > signalLine ? "BULLISH" : "BEARISH"
+        table.cell(marketContextTable, 1, 6, macdText, text_color=macdColor)
+        
+        // Momentum
+        table.cell(marketContextTable, 0, 7, "15m Momentum", text_color=color.white)
+        momColor = momentum5m == 1 ? color.green :
+                  momentum5m == -1 ? color.red : color.gray
+        momText = momentum5m == 1 ? "BULLISH" :
+                 momentum5m == -1 ? "BEARISH" : "NEUTRAL"
+        table.cell(marketContextTable, 1, 7, momText, text_color=momColor)
+        
+        // Exhaustion Signals
+        table.cell(marketContextTable, 0, 8, "Exhaustion", text_color=color.white)
+        exhCount = array.size(exhaustionSignals)
+        exhColor = exhCount >= minExhaustionStrength ? color.red : 
+                  exhCount > 0 ? color.orange : color.green
+        exhText = exhCount >= minExhaustionStrength ? "HIGH ⚠️" :
+                 exhCount > 0 ? "MEDIUM" : "LOW"
+        table.cell(marketContextTable, 1, 8, exhText + " (" + str.tostring(exhCount) + ")", text_color=exhColor)
+        
+        // Sweep Activity
+        table.cell(marketContextTable, 0, 9, "Sweeps", text_color=color.white)
+        sweepColor = globalSweepCount > 10 ? color.red :
+                     globalSweepCount > 5 ? color.orange : color.green
+        table.cell(marketContextTable, 1, 9, str.tostring(globalSweepCount), text_color=sweepColor)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 6. RISK MANAGER TABLE - Position & Risk Control
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+updateRiskManagerTable() =>
+    if showRiskManager and not na(riskManagerTable)
+        // Header
+        for col = 0 to 3
+            table.cell(riskManagerTable, col, 0, col == 0 ? "🛡️ RISK MANAGER" : "", 
+                      text_color=color.white, bgcolor=color.red)
+        
+        // Risk Parameters
+        table.cell(riskManagerTable, 0, 1, "Max Risk %", text_color=color.white)
+        table.cell(riskManagerTable, 1, 1, str.tostring(maxRiskPercent * 100, "#.#") + "%", text_color=color.yellow)
+        
+        // Current Position
+        table.cell(riskManagerTable, 0, 2, "Position Size", text_color=color.white)
+        posColor = globalPositionSize > maxRiskPercent * 0.8 ? color.red :
+                  globalPositionSize > maxRiskPercent * 0.5 ? color.orange : color.green
+        table.cell(riskManagerTable, 1, 2, str.tostring(globalPositionSize * 100, "#.#") + "%", text_color=posColor)
+        
+        // Stop Distance
+        stopDistance = getVolatilityAdjustedStopDistanceLocal()
+        table.cell(riskManagerTable, 0, 3, "Stop Distance", text_color=color.white)
+        table.cell(riskManagerTable, 1, 3, str.tostring(stopDistance / atrValue, "#.#") + " ATR", text_color=color.orange)
+        
+        // Volatility Multiplier
+        volMultiplier = getVolatilityMultiplierLocal()
+        table.cell(riskManagerTable, 0, 4, "Vol Adjust", text_color=color.white)
+        volAdjColor = volMultiplier > 1.2 ? color.red :
+                     volMultiplier < 0.8 ? color.green : color.orange
+        table.cell(riskManagerTable, 1, 4, str.tostring(volMultiplier, "#.##") + "x", text_color=volAdjColor)
+        
+        // AI Learning Status
+        table.cell(riskManagerTable, 0, 5, "AI Learning", text_color=color.white)
+        learnColor = globalNeedsRetrain ? color.red : color.green
+        learnText = globalNeedsRetrain ? "RETRAIN 🔄" : "ACTIVE ✅"
+        table.cell(riskManagerTable, 1, 5, learnText, text_color=learnColor)
+        
+        // Retrain Progress
+        if learningEnabled
+            barsSinceRetrain = bar_index - globalLastRetrainBar
+            retrainProgress = (barsSinceRetrain / retrainInterval) * 100
+            table.cell(riskManagerTable, 0, 6, "Retrain Prog", text_color=color.white)
+            progColor = retrainProgress > 80 ? color.red :
+                       retrainProgress > 60 ? color.orange : color.green
+            table.cell(riskManagerTable, 1, 6, str.tostring(math.round(retrainProgress)) + "%", text_color=progColor)
+        
+        // Trade Quality Filter
+        table.cell(riskManagerTable, 0, 7, "Quality Filter", text_color=color.white)
+        filterColor = globalPredictionScore > 0.7 ? color.green :
+                     globalPredictionScore > 0.5 ? color.orange : color.red
+        filterText = globalPredictionScore > 0.7 ? "HIGH" :
+                     globalPredictionScore > 0.5 ? "MEDIUM" : "LOW"
+        table.cell(riskManagerTable, 1, 7, filterText, text_color=filterColor)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 7. UNIFIED TABLE UPDATE FUNCTION
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+updateAllEnhancedTables() =>
+    updateMainDashboard()
+    updateTradingEdgeTable()
+    updateLevelsMonitor()
+    updateFVGTracker()
+    updateMarketContextTable()
+    updateRiskManagerTable()
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 8. INTEGRATION INTO MAIN EXECUTION
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+
+updateAllVisualizations() =>
+    if showFVG
+        drawFVGBoxes()
+    
+    drawZones()
+    
+    updateAllEnhancedTables()
+    
+    if showExhaustion
+        drawExhaustionSignals()
+    
+    if bar_index >= 10
+        drawPriceTargets()
+
+// Create signal label
+createSignalLabel() =>
+    // Create signal label on the last bar
+    if barstate.islast
+        // Instead of modifying globalLastSignalLabel directly, return the label
+        string biasText = globalCombinedBias == 1 ? "BULLISH" : globalCombinedBias == -1 ? "BEARISH" : "NEUTRAL"
+        color signalColor = globalCombinedBias == 1 ? color.green : globalCombinedBias == -1 ? color.red : color.gray
+        
+        string labelText = "STRUCTURE COMPLETE - Bias: " + biasText + " | Grade: " + globalFinalGrade + 
+                          " | FVG: " + str.tostring(globalActiveBull) + "B/" + str.tostring(globalActiveBear) + "S" + 
+                          " | Sweeps: " + str.tostring(globalSweepCount) + " | Conf: " + globalConfidenceText + 
+                          " | WR: " + str.tostring(math.round(globalWinRate * 100, 1)) + "%"
+        
+        // Return the label object instead of modifying global variable
+        label.new(bar_index, high * 1.001, labelText, color=signalColor, textcolor=color.white, style=label.style_label_down, yloc=yloc.price, size=size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// Calculate active FVG counts
+calculateActiveFVGCounts() =>
+    int bullCount = 0
+    int bearCount = 0
+    if array.size(fvgBoxes) > 0
+        for i = 0 to array.size(fvgBoxes) - 1
+            if i < array.size(fvgActive) and array.get(fvgActive, i)
+                if i < array.size(fvgBullish) and array.get(fvgBullish, i)
+                    bullCount := bullCount + 1
+                else if i < array.size(fvgBullish)
+                    bearCount := bearCount + 1
+    [bullCount, bearCount]
+
+
+// Calculate sweep count
+calculateSweepCount() =>
+    [swept, count] = safeDetectZoneSweeps()
+    [count, swept]
+
+// Calculate range metrics
+calculateRangeMetrics() =>
+    currentRangeLocal = high - low
+    avgRange20Local = ta.sma(high - low, 20)
+    compressionRatioLocal = currentRangeLocal / math.max(avgRange20Local, syminfo.mintick)
+    [currentRangeLocal, avgRange20Local, compressionRatioLocal]
+
+// Calculate confirmation score
+calculateConfirmationScore() =>
+    score = 0.0
+    
+    if rsiOversold and globalCombinedBias > 0
+        score := score + 25
+    else if rsiOverbought and globalCombinedBias < 0
+        score := score + 25
+    
+    if macdBullish and globalCombinedBias >= 0
+        score := score + 25
+    else if macdBearish and globalCombinedBias <= 0
+        score := score + 25
+        
+    if volumeSpikeLocal
+        score := score + 25
+        
+    if momentum5m == globalCombinedBias
+        score := score + 25
+        
+    score
+
+// Calculate final grade
+calculateFinalGrade() =>
+    grade = 0
+
+    // 1. ZONE RICHNESS
+    zoneCount = array.size(allZoneLevels) + globalActiveBull + globalActiveBear
+    grade := grade + (zoneCount >= 8 ? 5 :
+                     zoneCount >= 6 ? 4 :
+                     zoneCount >= 4 ? 3 :
+                     zoneCount >= 2 ? 2 : 1)
+
+    // 2. SWEEP ACTIVITY
+    grade := grade + (globalSweepCount > 20 ? 3 :
+                     globalSweepCount > 10 ? 2 :
+                     globalSweepCount > 5  ? 1 : 0)
+
+    // 3. CONFIDENCE
+    grade := grade + (globalHighConfidence ? 4 :
+                     globalMediumConfidence ? 2 : 0)
+
+    // 4. REGIME ALIGNMENT
+    phase = globalMarketPhase
+    aligned = (globalCombinedBias == 1  and (phase == "ACCUMULATION" or phase == "MARKUP")) or
+              (globalCombinedBias == -1 and (phase == "DISTRIBUTION" or phase == "MARKDOWN"))
+    grade := grade + (aligned ? 3 : 0)
+
+    // 5. EXHAUSTION PENALTY
+    if array.size(exhaustionSignals) >= minExhaustionStrength
+        grade := grade - 1
+
+    // 6. ORDER-FLOW IMBALANCE
+    grade := grade + (array.size(imbalanceLevels) >= 3 ? 2 :
+                     array.size(imbalanceLevels) >= 1 ? 1 : 0)
+
+    // 7. VOLUME-PROFILE STRENGTH
+    grade := grade + (array.size(highVolumeZones) >= 3 ? 2 :
+                     array.size(highVolumeZones) >= 1 ? 1 : 0)
+
+    // 8. MULTI-TIME-FRAME CONFIRMATION
+    mtfBoost = 0
+    for i = 0 to math.min(9, array.size(allZoneLevels) - 1)
+        float lvl = safeGetFloat(allZoneLevels, i)
+        if not na(lvl) and (isHTFLevelLocal(lvl) or isMTFLevelLocal(lvl))
+            mtfBoost := mtfBoost + 1
+    grade := grade + (mtfBoost >= 3 ? 3 :
+                     mtfBoost >= 1 ? 1 : 0)
+
+    // 9. RECENT BOS / CHoCH
+    grade := grade + (globalBosCount > 0 ? 2 : 0)
+
+    // 10. MARKET-READY BOOST
+    grade := grade + (globalMarketReady ? 2 : 0)
+
+    // FINAL LETTER GRADE
+    grade >= 18 ? "A+" : grade >= 15 ? "A"  : grade >= 12 ? "B+" : grade >= 9 ? "B"  : grade >= 6 ? "C+" : "C"
+
+// UNIFIED EXECUTION LOGIC - CLEAN ARCHITECTURE
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Main execution block - FIXED VERSION
+if barstate.isconfirmed
+    // ========================================
+    // PHASE 1: INITIALIZE WEIGHTS
+    // ========================================
+    initializeWeights()
+    
+    // ========================================
+    // PHASE 2: DETECTION FUNCTIONS (PURE FUNCTIONS)
+    // ========================================
+    
+    // 1. Detect FVGs
+    detectFVG()
+    
+    // 2. Check FVG invalidation
+    checkFVGInvalidation()
+    
+    // 3. Detect critical levels
+    if enablePriceAction
+        detectCriticalLevelsLocal()
+    
+    // 4. Detect volume profile
+    if showLiquidity
+        detectVolumeProfileLevelsLocal()
+    
+    // 5. Update price targets
+    updatePriceTargetsLocal()
+    
+    // 6. Detect BOS
+    globalBosCount := 0
+    if showBOS
+        bosDetected = detectBOSLocal()
+        globalBosCount := bosDetected
+    
+    // 7. Periodic cleanup
+    if bar_index % 20 == 0
+        performUnifiedCleanup()
+    
+    // 8. Detect order flow imbalance
+    if showImbalance
+        detectOrderFlowImbalanceLocal()
+    
+    // 9. NEW: Detect swing highs/lows for breach analysis
+    if bar_index % 5 == 0
+        // Update recent swing points for breach analysis
+        if high == ta.highest(high, 5) and high > high[1] and high > high[2]
+            safePush(recentSwingHighs, high)
+            // Keep only recent swings
+            while array.size(recentSwingHighs) > 10
+                array.remove(recentSwingHighs, 0)
+        
+        if low == ta.lowest(low, 5) and low < low[1] and low < low[2]
+            safePush(recentSwingLows, low)
+            // Keep only recent swings
+            while array.size(recentSwingLows) > 10
+                array.remove(recentSwingLows, 0)
+    
+    // ========================================
+    // PHASE 3: CALCULATE LOCAL VALUES
+    // ========================================
+    
+    // Calculate all local values FIRST
+    [localActiveBull, localActiveBear] = calculateActiveFVGCounts()
+    [localSweepCount, localSweptThisBar] = calculateSweepCount()
+    [localRangeCurrent, localAvgRange20, localRangeRatio] = calculateRangeMetrics()
+
+    
+    // Get predictive logic results
+    [localMlDir, localPredScore, localPosSize, localBullTgt, localBearTgt, localAdvRegime, 
+     localWinRate, localExpectancy, localSharpe, localTotalTrades, localAvgWin, 
+     localNeedsRetrain, localTradeSignal, localTradeDir, localEntryPrice, localStopPrice, 
+     localTargetPrice, localTradeReason, localDynamicThreshold, localCatScore,
+     localExtremeComp, localHighComp, localVolumeSpike, localRangeCompCat] = executePredictiveLogicClean()
+    
+    // Get other local calculations
+    [localVolatilityRegime, localTrendStrength, localVolRatio] = detectAdvancedRegimesLocal()
+    localMarketPhase = detectMarketPhaseLocal()
+    [localLongEntry, localShortEntry, localEntryScore] = calculatePrecisionOrderFlowLocal()
+    [localBullExh, localBearExh, localBalExh, localExhScore, localExhCount] = safeDetectAllExhaustion()
+    
+    // Calculate HTF bias
+    htfEMA50 = request.security(syminfo.tickerid, biasHTF, ta.ema(close, 50), gaps=barmerge.gaps_off)
+    htfEMA200 = request.security(syminfo.tickerid, biasHTF, ta.ema(close, 200), gaps=barmerge.gaps_off)
+    globalCachedHTFBias := not na(htfEMA50) and not na(htfEMA200) ? 
+                 (htfEMA50 > htfEMA200 ? 1 : htfEMA50 < htfEMA200 ? -1 : 0) : 0
+    
+    momentumBias = close > ta.highest(high, 10) ? 1 : close < ta.lowest(low, 10) ? -1 : 0
+    weightedBias = (globalCachedHTFBias * 0.6) + (momentumBias * 0.4)
+    globalCombinedBias := weightedBias > 0.3 ? 1 : weightedBias < -0.3 ? -1 : 0
+    
+    // ========================================
+    // NEW: BREACH/BOUNCE DETECTION LOGIC
+    // ========================================
+    
+    // Check for level breaches
+    if array.size(allZoneLevels) > 0
+        for i = 0 to math.min(9, array.size(allZoneLevels) - 1)
+            level = safeGetFloat(allZoneLevels, i)
+            zoneType = safeGetString(allZoneTypes, i)
+            
+            if not na(level) and not na(zoneType)
+                // Check for recent breach (last 5 bars)
+                breached = false
+                breachBias = 0
+                
+                if zoneType == "RESISTANCE"
+                    for j = 1 to 5
+                        if j <= bar_index and close[j] > level
+                            breached := true
+                            breachBias := 1  // Bullish breach
+                            break
+                else if zoneType == "SUPPORT"
+                    for j = 1 to 5
+                        if j <= bar_index and close[j] < level
+                            breached := true
+                            breachBias := -1  // Bearish breach
+                            break
+                
+                if breached and breachBias != 0
+                    // Check if level is already breached
+                    if not isLevelAlreadyBreachedLocal(level, breachBias, 15)
+                        globalLastBreachedLevel := level
+                        globalBreachBias := breachBias
+                        globalBreachBar := bar_index
+                        
+                        // Analyze bounce quality
+                        globalBounceQuality := detectBounceQualityLocal(breachBias, level)
+                        
+                        // Find retest levels
+                        globalRetestLevels := findRetestLevelsLocal(breachBias, level)
+                        
+                        // Find next valid targets
+                        if breachBias == 1  // Bullish breach
+                            globalNextBullTarget := findNextValidBullTargetLocal(level)
+                        else if breachBias == -1  // Bearish breach
+                            globalNextBearTarget := findNextValidBearTargetLocal(level)
+                        
+                        break
+
+    // Update breach state (expire after 50 bars)
+    if not na(globalLastBreachedLevel) and (bar_index - globalBreachBar) > 50
+        globalLastBreachedLevel := na
+        globalBreachBias := 0
+        globalBounceQuality := "NEUTRAL_BOUNCE"
+        array.clear(globalRetestLevels)
+        globalNextBullTarget := na
+        globalNextBearTarget := na
+    
+    // ========================================
+    // PHASE 4: UPDATE ALL GLOBAL VARIABLES
+    // ========================================
+    
+    // Performance Metrics
+    globalWinRate := localWinRate
+    globalExpectancy := localExpectancy
+    globalSharpe := localSharpe
+    globalTotalTrades := localTotalTrades
+    globalAvgWin := localAvgWin
+    
+    // Compression Catalyst
+    globalCatScore := localCatScore
+    globalExtremeComp := localExtremeComp
+    globalHighComp := localHighComp
+    globalVolumeSpike := localVolumeSpike
+    globalRangeComp := localRangeCompCat 
+    
+    // Market State
+    globalVolatilityRegime := localVolatilityRegime
+    globalAdvancedRegime := localAdvRegime
+    globalTrendRegime := localAdvRegime
+    globalMarketPhase := localMarketPhase
+    
+    // AI/Trading State
+    globalPredictionScore := localPredScore
+    globalMLDirection := localMlDir
+    globalPositionSize := localPosSize
+    globalBullTarget := localBullTgt
+    globalBearTarget := localBearTgt
+    globalAI_LongEntry := localLongEntry
+    globalAI_ShortEntry := localShortEntry
+    globalEntryScore := localEntryScore
+    globalNeedsRetrain := localNeedsRetrain
+    
+    // Trade State
+    globalTradeSignal := localTradeSignal
+    globalTradeDirection := localTradeDir
+    globalEntryPrice := localEntryPrice
+    globalStopPrice := localStopPrice
+    globalTargetPrice := localTargetPrice
+    globalTradeReason := localTradeReason
+    
+    // Exhaustion State
+    globalBullishExhaustion := localBullExh
+    globalBearishExhaustion := localBearExh
+    globalExhaustionScore := localExhScore
+    globalLastExhaustionType := localBullExh and not localBearExh ? "BULLISH" : 
+                              localBearExh and not localBullExh ? "BEARISH" : 
+                              localBalExh ? "BALANCED" : "NONE"
+    if localExhCount > 0
+        globalLastExhaustionBar := bar_index
+    
+    // FVG State
+    globalActiveBull := localActiveBull
+    globalActiveBear := localActiveBear
+    globalSweepCount := localSweepCount
+    
+    // Market Metrics
+    globalCurrentRange := localRangeCurrent
+    globalAvgRange := localAvgRange20
+    globalAvgVolume20 := ta.sma(volume, 20)
+    
+    // Confidence Calculation
+    confirmationScore = calculateConfirmationScore()
+    globalHighConfidence := confirmationScore >= 80
+    globalMediumConfidence := confirmationScore >= 60 and confirmationScore < 80
+    globalLowConfidence := confirmationScore < 60
+    globalConfidenceText := globalHighConfidence ? "HIGH" : globalMediumConfidence ? "MEDIUM" : "LOW"
+    globalConfirmationScore := confirmationScore
+    
+    // Market Ready Flag
+    globalMarketReady := globalHighConfidence and (globalActiveBull > 0 or globalActiveBear > 0)
+    
+    // ========================================
+    // PHASE 5: RETRAIN CHECK
+    // ========================================
+    if learningEnabled and bar_index > lookbackPeriod
+        if bar_index % retrainInterval == 0 or (globalWinRate < 0.45 and bar_index - globalLastRetrainBar > 50)
+            globalNeedsRetrain := true
+            globalLastRetrainBar := bar_index
+    
+    // ========================================
+    // PHASE 6: CALCULATE FINAL GRADE
+    // ========================================
+    globalFinalGrade := calculateFinalGrade()
+    
+    // ========================================
+    // PHASE 7: VISUALIZATION
+    // ========================================
+    updateAllVisualizations()
+    
+    // ========================================
+    // PHASE 8: CREATE SIGNAL LABEL
+    // ========================================
+    if not na(globalLastSignalLabel)
+        label.delete(globalLastSignalLabel)
+    
+    if barstate.islast
+        globalLastSignalLabel := createSignalLabel()
+
+
+
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// FINAL PLOTS (UNCHANGED)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+plotAplus = showGrade and globalFinalGrade == "A+" ? close : na
+plot(plotAplus, color=color.lime, style=plot.style_cross, linewidth=2)
+
+plotA = showGrade and globalFinalGrade == "A" ? close : na
+plot(plotA, color=color.orange, style=plot.style_cross, linewidth=2)
+
+bgcolor(globalCombinedBias == 1 ? color.new(color.green, 97) : 
+       globalCombinedBias == -1 ? color.new(color.red, 97) : na)
