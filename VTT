@@ -9,15 +9,15 @@ indicator("MT Structure Visualizer [MTF FVG v16 - Unified Pro - CLEAN]", "VTT", 
 showInstitutionalFVGs = input.bool(true, "🏦 Institutional FVGs", group="FVG Settings")
 requireVolumeSpike = input.bool(true, "Require Volume Spike", group="FVG Settings")
 minVolumeMultiplier = input.float(2.0, "Inst Volume Multiplier", minval=1.0, maxval=5.0, step=0.1, group="FVG Settings") // Increased
-instMinSizeATR = input.float(0.008, "Inst Min Size (ATR)", minval=0.003, maxval=0.02, step=0.001, group="FVG Settings") // Larger minimum
+instMinSizeATR = input.float(0.015, "Inst Min Size (ATR)", minval=0.003, maxval=0.02, step=0.001, group="FVG Settings") // Larger minimum
 requireSmartMoney = input.bool(true, "Require Smart Money", group="FVG Settings")
 requireMarketStructure = input.bool(true, "Require Market Structure", group="FVG Settings")
 requireLiquidityGrab = input.bool(true, "Require Liquidity Grab", group="FVG Settings")
 
 // New institutional-specific thresholds
-instDeltaThreshold = input.float(1.5, "Delta Ratio Threshold", minval=1.0, maxval=3.0, step=0.1, group="FVG Settings")
-instCumDeltaLookback = input.int(50, "Cum Delta Lookback", minval=20, maxval=200, group="FVG Settings")
-instWickRatio = input.float(2.0, "Min Wick Ratio", minval=1.0, maxval=4.0, step=0.1, group="FVG Settings")
+instDeltaThreshold = input.float(1.3, "Delta Ratio Threshold", minval=1.0, maxval=3.0, step=0.1, group="FVG Settings")
+instCumDeltaLookback = input.int(30, "Cum Delta Lookback", minval=20, maxval=200, group="FVG Settings")
+instWickRatio = input.float(1.8, "Min Wick Ratio", minval=1.0, maxval=4.0, step=0.1, group="FVG Settings")
 // ---- Debug Settings ----
 debugMode = input.bool(false, "🐛 Debug Mode", group="Debug Settings")
 showTradeDebug = input.bool(true, "🐛 Trade Signal Debug", group="Debug Settings")
@@ -209,6 +209,8 @@ var priceTargets = array.new<float>()
 var targetTypes = array.new<string>()
 var targetStrengths = array.new<float>()
 var targetSources = array.new<string>()
+var closeHistory = array.new_float()
+var atrHistory = array.new_float()
 
 var measuredMoveTargets = array.new<float>()
 var fibExtensionTargets = array.new<float>()
@@ -933,41 +935,53 @@ calculateExpectedWinRateLocal() =>
     finalWinRate
 
 calculateCurrentWinRateLocal() =>
-    if bar_index < 50  // Need enough data
+    // Use stored arrays instead of dynamic history referencing
+    int histSize = array.size(closeHistory)
+    // Need at least some history to compute; replicate original guard
+    if histSize < 20
         0.5
     else
-        correct = 0
-        total = 0
-        
-        // Look at last 100 bars (but not too recent)
-        lookback = math.min(100, bar_index - 10)
-        
-        for i = 10 to lookback
-            // SAFETY CHECK: Ensure we have enough historical data
-            if i + 5 <= bar_index
-                // Calculate what ACTUALLY happened (5-bar forward move)
-                startPrice = close[i]
-                endPrice = close[i+5]
-                priceChange = endPrice - startPrice
-                moveSize = math.abs(priceChange) / atrValue[i]
-                
+        int correct = 0
+        int total = 0
+
+        // Look at last up to 100 offsets but ensure we have enough history for offset + 5
+        int maxOffset = math.min(100, histSize - 10)  // offset corresponds to original 'i' in your code
+        // Loop over offsets (10..maxOffset) similar to original code
+        for offset = 10 to maxOffset
+            // Compute indices in arrays for start (offset) and end (offset - 5)
+            // hist index mapping: series[offset]  => array index = histSize - 1 - offset
+            int idxStart = histSize - 1 - offset               // corresponds to close[offset]
+            int idxEnd = histSize - 1 - (offset - 5)           // corresponds to close[offset + 5]
+            int idxStartMinus3 = idxStart + 3                  // corresponds to close[offset - 3] in original (used for momentum)
+
+            // Ensure indices are inside array bounds
+            if idxStart >= 0 and idxEnd >= 0 and idxStart < histSize and idxEnd < histSize and idxStartMinus3 >= 0 and idxStartMinus3 < histSize
+                float startPrice = array.get(closeHistory, idxStart)
+                float endPrice = array.get(closeHistory, idxEnd)
+                float atrAtStart = array.get(atrHistory, idxStart)
+                // safety: avoid division by zero or na atr
+                if atrAtStart == 0 or na(atrAtStart)
+                    continue
+
+                float priceChange = endPrice - startPrice
+                float moveSize = math.abs(priceChange) / atrAtStart
+
                 // Only count significant moves (> 0.5 ATR)
                 if moveSize > 0.5
-                    actualDirection = priceChange > 0 ? 1 : -1
-                    
-                    // Calculate what model WOULD HAVE PREDICTED at time [i]
-                    // Use simple momentum as proxy for model prediction
-                    pastMomentum = (close[i] - close[i-3]) / (atrValue[i] * 3.0)
-                    predictedDirection = pastMomentum > 0.1 ? 1 : pastMomentum < -0.1 ? -1 : 0
-                    
-                    // Count as correct if prediction matches actual (and not neutral)
+                    int actualDirection = priceChange > 0 ? 1 : -1
+
+                    // Calculate what the model WOULD HAVE PREDICTED at time [offset]
+                    float startPriceForMomentum = startPrice
+                    float olderPrice = array.get(closeHistory, idxStartMinus3)
+                    float pastMomentum = (startPriceForMomentum - olderPrice) / (atrAtStart * 3.0)
+                    int predictedDirection = pastMomentum > 0.1 ? 1 : pastMomentum < -0.1 ? -1 : 0
+
                     if predictedDirection == actualDirection and predictedDirection != 0
                         correct += 1
-                    
+
                     total += 1
-        
-        // Return win rate with minimum 30% floor
-        winRateLocal = total > 10 ? correct / float(total) : 0.5
+
+        float winRateLocal = total > 10 ? (float(correct) / float(total)) : 0.5
         math.max(0.3, math.min(0.8, winRateLocal))
 
 calculateTradingEdgeLocal() =>
@@ -2158,219 +2172,170 @@ createFVG(fvgTop, fvgBottom, isBullish, creationBar, isInstitutional=false) =>
     result
 
 // ============================================================
+// ========== SAFE HELPER FUNCTIONS ==========
+
+// Safe swing high detection that won't cause compile errors
+isSwingHighSafe(int left, int right) =>
+    // Only calculate if we have enough bars
+    if bar_index >= (left + right + 5)
+        // Use positive offsets only - NEVER use negative indexing
+        high >= ta.highest(high, left) and high >= ta.highest(high, right)[right]
+    else
+        false
+
+// Safe swing low detection that won't cause compile errors
+isSwingLowSafe(int left, int right) =>
+    // Only calculate if we have enough bars
+    if bar_index >= (left + right + 5)
+        // Use positive offsets only - NEVER use negative indexing
+        low <= ta.lowest(low, left) and low <= ta.lowest(low, right)[right]
+    else
+        false
 
 // ============================================================
 detectFVG() =>
     result = 0
     
     if showFVG
-        // ========== CRITICAL FIX: MINIMUM BAR REQUIREMENT ==========
-        // Need at least: max(leftBars, rightBars) * 2 + 10 bars
-        // 10 extra bars for volume SMA, ATR, and other calculations
-        int minRequiredBars = math.max(leftBars, rightBars) * 2 + 10
+        // ========== CRITICAL: MINIMUM BAR REQUIREMENT ==========
+        // Wait for sufficient data before attempting ANY calculations
+        // Need enough bars for ALL historical references in the function
+        int minRequiredBars = 50  // Conservative estimate
         
         if bar_index < minRequiredBars
             if debugMode and bar_index == (minRequiredBars - 1)
-                debugLog("⏳ Waiting for " + str.tostring(minRequiredBars) + 
-                         " bars (currently: " + str.tostring(bar_index) + ")")
-            result  // Return early - not enough data
-        
-        // ========== DECLARE ALL VARIABLES AT THE TOP ==========
-        // FIX: Add highConfidence at top scope
-        bool highConfidence = false
-        int score = 0
-        
-        // Volume analysis
-        avgVolume = ta.sma(volume, 20)
-        // FIX: Need at least 20 bars for SMA
-        if na(avgVolume)
-            if debugMode
-                debugLog("⚠️ avgVolume is na - waiting for enough volume data")
-            result  // Return early
-        
-        bool volumeSpike = false
-        bool volumeExtreme = false
-        bool volumeAcceleration = false
-        bool volumeSurge = false
-        
-        // Order flow - need at least instCumDeltaLookback bars
-        if bar_index < instCumDeltaLookback
-            if debugMode
-                debugLog("⚠️ Not enough bars for order flow analysis")
-            result
-        
-        float delta = 0.0
-        float cumDelta = 0.0
-        float deltaChange = 0.0
-        bool deltaAcceleration = false
-        float buyVolume = 0.0
-        float sellVolume = 0.0
-        float deltaRatio = 1.0
-        
-        // Price action
-        totalRange = high - low
-        bodySize = math.abs(close - open)
-        upperWick = high - math.max(open, close)
-        lowerWick = math.min(open, close) - low
-        
-        bool strongUpperRejection = false
-        bool strongLowerRejection = false
-        bool absorptionCandle = false
-        
-        // Market structure - need at least max(leftBars, rightBars) + 2 bars
-        int requiredBarsForStructure = math.max(leftBars, rightBars) + 2
-        if bar_index < requiredBarsForStructure
-            if debugMode
-                debugLog("⚠️ Not enough bars for market structure analysis")
-            result
-        
-        bool isSwingHigh = false
-        bool isSwingLow = false
-        bool HH = false
-        bool LL = false
-        bool bullishCHoCH = false
-        bool bearishCHoCH = false
-        
-        // Liquidity
-        recentHigh = ta.highest(high, 20)
-        recentLow = ta.lowest(low, 20)
-        // FIX: Check if these are na
-        if na(recentHigh) or na(recentLow)
-            if debugMode
-                debugLog("⚠️ recentHigh/Low is na")
-            result
-        
-        bool bullishLiquidityGrab = false
-        bool bearishLiquidityGrab = false
-        
-        // Core FVG - need at least 3 bars for [2] index
-        if bar_index < 3
-            result
-        
-        retailBullishFVG = low > high[2]
-        retailBearishFVG = high < low[2]
-        
-        // FIX: Check if these historical values exist
-        retailBullishTop = high[2]
-        retailBullishBottom = low
-        retailBearishTop = high
-        retailBearishBottom = low[2]
-        
-        // Check for na values
-        if na(retailBullishTop) or na(retailBearishBottom)
-            if debugMode
-                debugLog("⚠️ Historical price data is na")
-            result
-        
-        // Institutional detection
-        bool institutionalBullishFVG = false
-        bool institutionalBearishFVG = false
-        
-        // Patterns
-        bool pattern1 = false
-        bool pattern2 = false
-        bool pattern3 = false
-        bool pattern4 = false
-        bool pattern5 = false
-        bool pattern6 = false
-        bool pattern1b = false
-        bool pattern2b = false
-        bool pattern3b = false
-        bool pattern4b = false
-        bool pattern5b = false
-        bool pattern6b = false
-        
-        // ========== CALCULATE ALL VALUES ==========
-        // All calculations can proceed now since we've checked bar_index
-        
-        // Volume analysis
-        volumeSpike := volume > avgVolume * minVolumeMultiplier
-        volumeExtreme := volume > avgVolume * (minVolumeMultiplier * 1.5)
-        
-        // FIX: Check bar_index for [1] reference
-        if bar_index >= 1
+                debugLog("⏳ Waiting for " + str.tostring(minRequiredBars) + " bars")
+            result  // EARLY RETURN - critical!
+        else
+            // ========== DECLARE ALL VARIABLES AT THE TOP ==========
+            // Volume analysis
+            avgVolume = ta.sma(volume, 20)
+            bool volumeSpike = false
+            bool volumeExtreme = false
+            bool volumeAcceleration = false
+            bool volumeSurge = false
+            
+            // Order flow
+            float delta = 0.0
+            float cumDelta = 0.0
+            float deltaChange = 0.0
+            bool deltaAcceleration = false
+            float buyVolume = 0.0
+            float sellVolume = 0.0
+            float deltaRatio = 1.0
+            
+            // Price action
+            totalRange = high - low
+            bodySize = math.abs(close - open)
+            upperWick = high - math.max(open, close)
+            lowerWick = math.min(open, close) - low
+            
+            bool strongUpperRejection = false
+            bool strongLowerRejection = false
+            bool absorptionCandle = false
+            
+            // Market structure - SAFE VERSION
+            bool isSwingHigh = false
+            bool isSwingLow = false
+            bool HH = false
+            bool LL = false
+            bool bullishCHoCH = false
+            bool bearishCHoCH = false
+            
+            // Liquidity
+            recentHigh = ta.highest(high, 20)
+            recentLow = ta.lowest(low, 20)
+            bool bullishLiquidityGrab = false
+            bool bearishLiquidityGrab = false
+            
+            // Core FVG
+            retailBullishFVG = low > high[2]
+            retailBearishFVG = high < low[2]
+            
+            retailBullishTop = high[2]
+            retailBullishBottom = low
+            retailBearishTop = high
+            retailBearishBottom = low[2]
+            
+            // Institutional detection
+            bool institutionalBullishFVG = false
+            bool institutionalBearishFVG = false
+            
+            // Patterns
+            bool pattern1 = false
+            bool pattern2 = false
+            bool pattern3 = false
+            bool pattern4 = false
+            bool pattern5 = false
+            bool pattern6 = false
+            bool pattern1b = false
+            bool pattern2b = false
+            bool pattern3b = false
+            bool pattern4b = false
+            bool pattern5b = false
+            bool pattern6b = false
+            
+            // Confidence scoring
+            bool highConfidence = false
+            int score = 0
+            
+            // ========== CALCULATE ALL VALUES ==========
+            // Volume analysis
+            volumeSpike := volume > avgVolume * minVolumeMultiplier
+            volumeExtreme := volume > avgVolume * (minVolumeMultiplier * 1.5)
             volumeAcceleration := (volume / volume[1]) > 1.3
-        
-        // FIX: Check bar_index for [1] reference in volumeSurge
-        if bar_index >= 1
             volumeSurge := volume > ta.highest(volume, 10)[1]
-        else
-            volumeSurge := false
-        
-        // Order flow analysis
-        if close > open
-            delta := volume * 0.8
-        else if close < open
-            delta := -volume * 0.8
-        else
-            delta := 0
-        
-        cumDelta := math.sum(delta, instCumDeltaLookback)
-        
-        // FIX: Check for [5] and [10] references
-        if bar_index >= 10
+            
+            // Order flow analysis
+            if close > open
+                delta := volume * 0.8
+            else if close < open
+                delta := -volume * 0.8
+            else
+                delta := 0
+            
+            cumDelta := math.sum(delta, instCumDeltaLookback)
             deltaChange := cumDelta - cumDelta[5]
             deltaAcceleration := deltaChange > deltaChange[5]
-        else
-            deltaChange := 0
-            deltaAcceleration := false
-        
-        buyVolume := volume * ((close - low) / math.max(high - low, syminfo.mintick))
-        sellVolume := volume * ((high - close) / math.max(high - low, syminfo.mintick))
-        deltaRatio := buyVolume / math.max(sellVolume, 1)
-        
-        // Price action analysis
-        strongUpperRejection := upperWick > bodySize * instWickRatio and close < open
-        strongLowerRejection := lowerWick > bodySize * instWickRatio and close > open
-        absorptionCandle := bodySize > totalRange * 0.7 and volumeSpike
-        
-        // Market structure analysis
-        isSwingHigh := high >= ta.highest(high, leftBars)[rightBars] and 
-                      high >= ta.highest(high, rightBars)[-rightBars]
-        isSwingLow := low <= ta.lowest(low, leftBars)[rightBars] and 
-                     low <= ta.lowest(low, rightBars)[-rightBars]
-        
-        // FIX: Check for [1] reference
-        if bar_index >= 1
+            
+            buyVolume := volume * ((close - low) / math.max(high - low, syminfo.mintick))
+            sellVolume := volume * ((high - close) / math.max(high - low, syminfo.mintick))
+            deltaRatio := buyVolume / math.max(sellVolume, 1)
+            
+            // Price action analysis
+            strongUpperRejection := upperWick > bodySize * instWickRatio and close < open
+            strongLowerRejection := lowerWick > bodySize * instWickRatio and close > open
+            absorptionCandle := bodySize > totalRange * 0.7 and volumeSpike
+            
+            // ========== MARKET STRUCTURE ANALYSIS ==========
+            // Using helper functions to avoid compile-time errors
+            isSwingHigh := isSwingHighSafe(leftBars, rightBars)
+            isSwingLow := isSwingLowSafe(leftBars, rightBars)
+            
             HH := high > ta.highest(high, 5)[1]
             LL := low < ta.lowest(low, 5)[1]
-        else
-            HH := false
-            LL := false
-        
-        // FIX: Check for [2] references
-        if bar_index >= 2
+            
             bullishCHoCH := LL[2] and HH and close > high[2]
             bearishCHoCH := HH[2] and LL and close < low[2]
-        else
-            bullishCHoCH := false
-            bearishCHoCH := false
-        
-        // Liquidity analysis - check for [1] reference
-        if bar_index >= 1
+            
+            // Liquidity analysis
             bullishLiquidityGrab := low <= recentLow[1] * 0.999 and close > open and volumeSpike
             bearishLiquidityGrab := high >= recentHigh[1] * 1.001 and close < open and volumeSpike
-        else
-            bullishLiquidityGrab := false
-            bearishLiquidityGrab := false
-        
-        // ========== ENHANCED INSTITUTIONAL FVG DETECTION ==========
-        // FIX: Add showInstitutionalFVGs check
-        if showInstitutionalFVGs
-            // Need at least 10 bars for pattern calculations
-            if bar_index >= 10
+            
+            // ========== ENHANCED INSTITUTIONAL FVG DETECTION ==========
+            if showInstitutionalFVGs
                 // INSTITUTIONAL BULLISH FVG PATTERNS (6 criteria)
                 
-                // Pattern 1: Liquidity Grab + FVG - check [2] reference
-                pattern1 = retailBullishFVG and (bar_index >= 2 and bullishLiquidityGrab[2]) and 
+                // Pattern 1: Liquidity Grab + FVG
+                pattern1 = retailBullishFVG and bullishLiquidityGrab[2] and 
                           volumeExtreme and strongLowerRejection
                 
                 // Pattern 2: BOS + CHoCH + FVG
                 pattern2 = retailBullishFVG and HH and bullishCHoCH and 
                           volumeSpike and deltaRatio > instDeltaThreshold
                 
-                // Pattern 3: Swing Low + Absorption + FVG - check [2] reference
-                pattern3 = retailBullishFVG and (bar_index >= 2 and isSwingLow[2]) and absorptionCandle and 
+                // Pattern 3: Swing Low + Absorption + FVG
+                pattern3 = retailBullishFVG and isSwingLow[2] and absorptionCandle and 
                           deltaAcceleration and cumDelta > cumDelta[10]
                 
                 // Pattern 4: Strong Delta + Volume Surge + FVG
@@ -2379,60 +2344,34 @@ detectFVG() =>
                           lowerWick > bodySize * (instWickRatio * 1.2)
                 
                 // Pattern 5: Multiple Timeframe Confirmation
-                // Check if this aligns with higher timeframe structure
                 htfHigh = request.security(syminfo.tickerid, "60", high, barmerge.gaps_off, barmerge.lookahead_off)
                 htfLow = request.security(syminfo.tickerid, "60", low, barmerge.gaps_off, barmerge.lookahead_off)
-                
-                // FIX: Check for [1] reference
-                pattern5 = retailBullishFVG and (bar_index >= 1 and low > htfLow[1]) and 
+                pattern5 = retailBullishFVG and low > htfLow[1] and 
                           volumeSpike and strongLowerRejection
                 
                 // Pattern 6: Compression Breakout FVG
-                // Small range preceding the FVG - check [3] reference
-                if bar_index >= 3
-                    prevRange = high[3] - low[3]
-                    avgRange = ta.sma(high - low, 20)
-                    compression = prevRange < avgRange * 0.6
-                    pattern6 = retailBullishFVG and compression and volumeSurge and HH
-                else
-                    pattern6 = false
+                prevRange = high[3] - low[3]
+                avgRange = ta.sma(high - low, 20)
+                compression = prevRange < avgRange * 0.6
+                pattern6 = retailBullishFVG and compression and volumeSurge and HH
                 
-                // Combine patterns (OR logic)
+                // Combine patterns
                 institutionalBullishFVG := pattern1 or pattern2 or pattern3 or pattern4 or pattern5 or pattern6
                 
                 // INSTITUTIONAL BEARISH FVG PATTERNS (6 criteria)
-                
-                // Pattern 1: Liquidity Grab + FVG - check [2] reference
-                pattern1b = retailBearishFVG and (bar_index >= 2 and bearishLiquidityGrab[2]) and 
+                pattern1b = retailBearishFVG and bearishLiquidityGrab[2] and 
                            volumeExtreme and strongUpperRejection
-                
-                // Pattern 2: BOS + CHoCH + FVG
                 pattern2b = retailBearishFVG and LL and bearishCHoCH and 
                            volumeSpike and deltaRatio < (1.0 / instDeltaThreshold)
-                
-                // Pattern 3: Swing High + Absorption + FVG - check [2] reference
-                pattern3b = retailBearishFVG and (bar_index >= 2 and isSwingHigh[2]) and absorptionCandle and 
+                pattern3b = retailBearishFVG and isSwingHigh[2] and absorptionCandle and 
                            deltaAcceleration and cumDelta < cumDelta[10]
-                
-                // Pattern 4: Strong Delta + Volume Surge + FVG
                 pattern4b = retailBearishFVG and volumeSurge and 
                            deltaRatio < (1.0 / (instDeltaThreshold * 1.2)) and 
                            upperWick > bodySize * (instWickRatio * 1.2)
-                
-                // Pattern 5: Multiple Timeframe Confirmation
-                pattern5b = retailBearishFVG and (bar_index >= 1 and high < htfHigh[1]) and 
+                pattern5b = retailBearishFVG and high < htfHigh[1] and 
                            volumeSpike and strongUpperRejection
+                pattern6b = retailBearishFVG and compression and volumeSurge and LL
                 
-                // Pattern 6: Compression Breakdown FVG
-                if bar_index >= 3
-                    prevRange = high[3] - low[3]
-                    avgRange = ta.sma(high - low, 20)
-                    compression = prevRange < avgRange * 0.6
-                    pattern6b = retailBearishFVG and compression and volumeSurge and LL
-                else
-                    pattern6b = false
-                
-                // Combine patterns (OR logic)
                 institutionalBearishFVG := pattern1b or pattern2b or pattern3b or pattern4b or pattern5b or pattern6b
                 
                 // ========== FINAL INSTITUTIONAL FILTERS ==========
@@ -2440,7 +2379,6 @@ detectFVG() =>
                 
                 // INSTITUTIONAL BULLISH FVG FINAL CHECK
                 if institutionalBullishFVG and (retailBullishTop - retailBullishBottom) >= minInstFVGSized
-                    // Score-based confidence system
                     score := 0
                     score := score + (pattern1 ? 3 : 0)
                     score := score + (pattern2 ? 3 : 0)
@@ -2450,23 +2388,18 @@ detectFVG() =>
                     score := score + (pattern6 ? 1 : 0)
                     score := score + (volumeExtreme ? 2 : volumeSpike ? 1 : 0)
                     score := score + (deltaRatio > instDeltaThreshold * 1.5 ? 2 : deltaRatio > instDeltaThreshold ? 1 : 0)
-                    score := score + ((bar_index >= 2 and isSwingLow[2]) ? 1 : 0)
+                    score := score + (isSwingLow[2] ? 1 : 0)
                     score := score + (bullishCHoCH ? 2 : 0)
                     
-                    highConfidence := score >= 6  // Need at least 6 points
+                    highConfidence := score >= 6
                     
                     if highConfidence
                         result := createFVG(retailBullishTop, retailBullishBottom, true, bar_index, true)
                         if debugMode
-                            debugLog("🏦 INST BULL FVG DETECTED | Score: " + str.tostring(score) + 
-                                     " | Size: " + str.tostring((retailBullishTop - retailBullishBottom) / atrValue, "#.##") + 
-                                     " ATR | Patterns: " + str.tostring(pattern1 ? "1" : "") + str.tostring(pattern2 ? "2" : "") + 
-                                     str.tostring(pattern3 ? "3" : "") + str.tostring(pattern4 ? "4" : "") + 
-                                     str.tostring(pattern5 ? "5" : "") + str.tostring(pattern6 ? "6" : ""))
-            
+                            debugLog("🏦 INST BULL FVG | Score: " + str.tostring(score))
+                
                 // INSTITUTIONAL BEARISH FVG FINAL CHECK
                 if institutionalBearishFVG and (retailBearishTop - retailBearishBottom) >= minInstFVGSized
-                    // Score-based confidence system
                     score := 0
                     score := score + (pattern1b ? 3 : 0)
                     score := score + (pattern2b ? 3 : 0)
@@ -2476,95 +2409,78 @@ detectFVG() =>
                     score := score + (pattern6b ? 1 : 0)
                     score := score + (volumeExtreme ? 2 : volumeSpike ? 1 : 0)
                     score := score + (deltaRatio < (1.0 / (instDeltaThreshold * 1.5)) ? 2 : deltaRatio < (1.0 / instDeltaThreshold) ? 1 : 0)
-                    score := score + ((bar_index >= 2 and isSwingHigh[2]) ? 1 : 0)
+                    score := score + (isSwingHigh[2] ? 1 : 0)
                     score := score + (bearishCHoCH ? 2 : 0)
                     
-                    highConfidence := score >= 6  // Need at least 6 points
+                    highConfidence := score >= 6
                     
                     if highConfidence
                         result := createFVG(retailBearishTop, retailBearishBottom, false, bar_index, true)
                         if debugMode
-                            debugLog("🏦 INST BEAR FVG DETECTED | Score: " + str.tostring(score) + 
-                                     " | Size: " + str.tostring((retailBearishTop - retailBearishBottom) / atrValue, "#.##") + 
-                                     " ATR | Patterns: " + str.tostring(pattern1b ? "1" : "") + str.tostring(pattern2b ? "2" : "") + 
-                                     str.tostring(pattern3b ? "3" : "") + str.tostring(pattern4b ? "4" : "") + 
-                                     str.tostring(pattern5b ? "5" : "") + str.tostring(pattern6b ? "6" : ""))
+                            debugLog("🏦 INST BEAR FVG | Score: " + str.tostring(score))
             
-            // FIX: Always check retail FVG if no institutional was created
-            // OR if institutional FVGs are disabled
+            // ========== RETAIL FVG DETECTION (FALLBACK) ==========
             if result == 0 or not showInstitutionalFVGs
-                // ========== RETAIL FVG DETECTION (FALLBACK) ==========
-                // Need at least 8 bars for previousHigh3/Low3
-                if bar_index >= 8
-                    previousHigh1 = ta.highest(high, 3)[1]
-                    previousHigh2 = ta.highest(high, 5)[1]
-                    previousHigh3 = ta.highest(high, 8)[1]
-                    
-                    previousLow1 = ta.lowest(low, 3)[1]
-                    previousLow2 = ta.lowest(low, 5)[1]
-                    previousLow3 = ta.lowest(low, 8)[1]
-                    
-                    // FIX: Check for na values
-                    if na(previousHigh1) or na(previousLow1)
-                        if debugMode
-                            debugLog("⚠️ Historical highs/lows are na")
-                        result
-                    else
-                        priceGapBull = low > high[1] or (bar_index >= 2 and low > high[2]) or (bar_index >= 3 and low > high[3])
-                        priceGapBear = high < low[1] or (bar_index >= 2 and high < low[2]) or (bar_index >= 3 and high < low[3])
-                        
-                        volumeSpikeModerate = volume > avgVolume * 1.2
-                        volumeSpikeStrong = volume > avgVolume * 1.5
-                        volumeConfirmed = volumeSpikeModerate or volumeSpikeStrong
-                        
-                        minFVGSized = atrValue * fvgMinSizeATR
-                        
-                        // Bullish FVG Detection
-                        bullishCondition1 = high > previousHigh1 and priceGapBull and (high[1] - low) >= minFVGSized
-                        bullishCondition2 = high > previousHigh2 and priceGapBull and (high[2] - low) >= minFVGSized
-                        bullishCondition3 = high > previousHigh3 and priceGapBull and (high[3] - low) >= minFVGSized
-                        
-                        if (bullishCondition1 or bullishCondition2 or bullishCondition3) and volumeConfirmed
-                            float fvgTop = na
-                            float fvgBottom = na
-                            
-                            if bullishCondition1
-                                fvgTop := high[1]
-                                fvgBottom := low
-                            else if bullishCondition2
-                                fvgTop := high[2]
-                                fvgBottom := low
-                            else if bullishCondition3
-                                fvgTop := high[3]
-                                fvgBottom := low
-                                
-                            if not na(fvgTop) and not na(fvgBottom)
-                                result := createFVG(fvgTop, fvgBottom, true, bar_index, false)
-                                    
-                        // Bearish FVG Detection
-                        bearishCondition1 = low < previousLow1 and priceGapBear and (high - low[1]) >= minFVGSized
-                        bearishCondition2 = low < previousLow2 and priceGapBear and (high - low[2]) >= minFVGSized
-                        bearishCondition3 = low < previousLow3 and priceGapBear and (high - low[3]) >= minFVGSized
-                        
-                        if (bearishCondition1 or bearishCondition2 or bearishCondition3) and volumeConfirmed
-                            float fvgTop = na
-                            float fvgBottom = na
-                            
-                            if bearishCondition1
-                                fvgTop := high
-                                fvgBottom := low[1]
-                            else if bearishCondition2
-                                fvgTop := high
-                                fvgBottom := low[2]
-                            else if bearishCondition3
-                                fvgTop := high
-                                fvgBottom := low[3]
-                                
-                            if not na(fvgTop) and not na(fvgBottom)
-                                result := createFVG(fvgTop, fvgBottom, false, bar_index, false)
+                previousHigh1 = ta.highest(high, 3)[1]
+                previousHigh2 = ta.highest(high, 5)[1]
+                previousHigh3 = ta.highest(high, 8)[1]
                 
-                else if debugMode
-                    debugLog("⚠️ Not enough bars for retail FVG detection (need 8, have " + str.tostring(bar_index) + ")")
+                previousLow1 = ta.lowest(low, 3)[1]
+                previousLow2 = ta.lowest(low, 5)[1]
+                previousLow3 = ta.lowest(low, 8)[1]
+                
+                priceGapBull = low > high[1] or low > high[2] or low > high[3]
+                priceGapBear = high < low[1] or high < low[2] or high < low[3]
+                
+                volumeSpikeModerate = volume > avgVolume * 1.2
+                volumeSpikeStrong = volume > avgVolume * 1.5
+                volumeConfirmed = volumeSpikeModerate or volumeSpikeStrong
+                
+                minFVGSized = atrValue * fvgMinSizeATR
+                
+                // Bullish FVG Detection
+                bullishCondition1 = high > previousHigh1 and priceGapBull and (high[1] - low) >= minFVGSized
+                bullishCondition2 = high > previousHigh2 and priceGapBull and (high[2] - low) >= minFVGSized
+                bullishCondition3 = high > previousHigh3 and priceGapBull and (high[3] - low) >= minFVGSized
+                
+                if (bullishCondition1 or bullishCondition2 or bullishCondition3) and volumeConfirmed
+                    float fvgTop = na
+                    float fvgBottom = na
+                    
+                    if bullishCondition1
+                        fvgTop := high[1]
+                        fvgBottom := low
+                    else if bullishCondition2
+                        fvgTop := high[2]
+                        fvgBottom := low
+                    else if bullishCondition3
+                        fvgTop := high[3]
+                        fvgBottom := low
+                        
+                    if not na(fvgTop) and not na(fvgBottom)
+                        result := createFVG(fvgTop, fvgBottom, true, bar_index, false)
+                        
+                // Bearish FVG Detection
+                bearishCondition1 = low < previousLow1 and priceGapBear and (high - low[1]) >= minFVGSized
+                bearishCondition2 = low < previousLow2 and priceGapBear and (high - low[2]) >= minFVGSized
+                bearishCondition3 = low < previousLow3 and priceGapBear and (high - low[3]) >= minFVGSized
+                
+                if (bearishCondition1 or bearishCondition2 or bearishCondition3) and volumeConfirmed
+                    float fvgTop = na
+                    float fvgBottom = na
+                    
+                    if bearishCondition1
+                        fvgTop := high
+                        fvgBottom := low[1]
+                    else if bearishCondition2
+                        fvgTop := high
+                        fvgBottom := low[2]
+                    else if bearishCondition3
+                        fvgTop := high
+                        fvgBottom := low[3]
+                        
+                    if not na(fvgTop) and not na(fvgBottom)
+                        result := createFVG(fvgTop, fvgBottom, false, bar_index, false)
             
             // ========== DEBUG LOGGING ==========
             if debugMode and barstate.isconfirmed
@@ -2575,12 +2491,9 @@ detectFVG() =>
                          " | Bearish: " + str.tostring(institutionalBearishFVG))
                 debugLog("  Volume Spike: " + str.tostring(volumeSpike) + 
                          " | Avg Vol: " + str.tostring(avgVolume))
-                debugLog("  FVG Boxes: " + str.tostring(array.size(fvgBoxes)) + 
-                         " | Max: " + str.tostring(maxFVGBoxes))
-                debugLog("  FVG Size Check: " + str.tostring(atrValue * fvgMinSizeATR))
                 debugLog("  Result: " + str.tostring(result))
     
-    result
+    result    
 // ═══════════════════════════════════════════════════════════════════════════════════════
 // 11. ENHANCED FVG INVALIDATION WITH FILL DETECTION
 // ═══════════════════════════════════════════════════════════════════════════════════════
