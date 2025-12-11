@@ -596,16 +596,16 @@ calculateVolatilityAdaptiveFeaturesLocal() =>
     features
 
 // Volatility-adaptive prediction
+// correct ordering: [entryThreshold, exitThreshold] with entryThreshold > exitThreshold
 getVolatilityThresholdsLocal(regimeInput) =>
-    // FIX: More permissive thresholds in low volatility
     if regimeInput == "LOW_VOL_CONTRACTION" or regimeInput == "NEUTRAL_TRANSITIONAL"
-        [0.40, 0.60]  // Much more permissive in low vol
+        [0.60, 0.40]  // entry 0.60, exit 0.40
     else if regimeInput == "HIGH_VOL_EXPANSION"
         [0.55, 0.45]
-    else if regimeInput == "MEDIUM_VOL_EXPANSION"  
-        [0.50, 0.50]
+    else if regimeInput == "MEDIUM_VOL_EXPANSION"
+        [0.50, 0.45]
     else
-        [0.45, 0.55]  // Default to permissive
+        [0.52, 0.48]
 
 getVolatilityWeightMultiplierLocal(regimeInput, featureIndex) =>
     // Feature-specific adjustments based on volatility
@@ -705,7 +705,7 @@ calculateEnhancedFeaturesLocal() =>
     // 6. MEAN REVERSION (dynamic)
     fromMA20 = (close - ta.sma(close, 20)) / atrValue
     fromMA50 = (close - ta.sma(close, 50)) / atrValue
-    meanReversion = (fromMA20 * 0.6) + (fromMA50 * 0.4) * -1
+    meanReversion = -((fromMA20 * 0.6) + (fromMA50 * 0.4))
     array.push(features, meanReversion * 0.2)
     
     // 7. BREAKOUT POTENTIAL (enhanced)
@@ -773,11 +773,13 @@ volatilityAdaptivePredictNextMoveLocal() =>
             totalWeight := totalWeight + array.get(adaptiveWeights, i)
     
     normalizedScore = totalWeight > 0 ? score / totalWeight : 0
-    probability = 1.0 / (1.0 + math.exp(-normalizedScore * 3.0))
+    rawScore = normalizedScore * 3.0
+
     
     // Volatility adjustments
     regimeLocal = detectVolatilityRegimeLocal()
-    probability := calculateVolatilityAdjustedProbabilityLocal(probability, regimeLocal)
+    probability = calculateVolatilityAdjustedProbabilityLocal(rawScore, regimeLocal)
+
     
     [entryThreshold, exitThreshold] = getVolatilityThresholdsLocal(regimeLocal)
     
