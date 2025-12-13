@@ -162,6 +162,10 @@ var string globalConfidenceText = ""
 var bool globalMarketReady = false
 var float globalConfirmationScore = 0.0
 
+// ========== GLOBAL REGIME TRACKING ==========
+var int globalLastRegimeChange = na
+var string globalPrevVolatilityRegime = na
+var float globalRegimeConfidence = 0.0
 
 
 // ========== GLOBAL EXHAUSTION STATE ==========
@@ -629,39 +633,44 @@ calculateVolatilityAdjustedProbabilityLocal(score, regimeInput) =>
     
     1.0 / (1.0 + math.exp(-score * steepness))
 
-// Add after line 950 (after volatility regime functions)
 
-calculateRegimeConfidenceLocal() =>
-    // How confident are we in the current volatility regime?
-    regime = detectVolatilityRegimeLocal()
-    
-    // Detect regime changes
-    var int lastRegimeChange = na
-    currentRegime = detectVolatilityRegimeLocal()
-    
-    if na(lastRegimeChange)
-        lastRegimeChange := bar_index
+// ========== GLOBAL REGIME TRACKING ==========
+
+
+// Function that DOES NOT modify globals — it only computes and RETURNS updated values
+updateRegimeTracking(regime, lastChange, prevRegime) =>
+    int newLast = lastChange
+    string newPrev = prevRegime
+
+    // Initialize if needed
+    if na(newLast)
+        newLast := bar_index
+        newPrev := regime
     else
-        previousRegime = currentRegime[1]
-        if currentRegime != previousRegime
-            lastRegimeChange := bar_index
-    
-    regimeDuration = bar_index - lastRegimeChange
-    
-    // Longer regime duration = higher confidence
-    durationConfidence = math.min(regimeDuration / 20.0, 1.0)
-    
-    // Consistency of regime signals
-    recentMatches = 0
-    for i = 1 to 5
-        if i <= bar_index and detectVolatilityRegimeLocal()[i] == regime
-            recentMatches += 1
-    
-    consistencyConfidence = recentMatches / 5.0
-    
-    (durationConfidence * 0.6) + (consistencyConfidence * 0.4)
+        if regime != newPrev
+            newLast := bar_index
+            newPrev := regime
 
-// Add after line 950 (after volatility regime functions)
+    // Duration-based confidence
+    int regimeDuration = bar_index - newLast
+    float durationConfidence = math.min(regimeDuration / 20.0, 1.0)
+
+    // Consistency of recent regime signals (safe indexing)
+    int recentMatches = 0
+    for i = 1 to 5
+        if i <= bar_index
+            recentMatches := recentMatches + (detectVolatilityRegimeLocal()[i] == regime ? 1 : 0)
+    float consistencyConfidence = recentMatches / 5.0
+
+    float conf = (durationConfidence * 0.6) + (consistencyConfidence * 0.4)
+
+    [newLast, newPrev, conf]
+
+// --- Call the pure function in the main scope and assign returned values to globals (functions must not write globals)
+[newLastChange, newPrevRegime, newConf] = updateRegimeTracking(detectVolatilityRegimeLocal(), globalLastRegimeChange, globalPrevVolatilityRegime)
+globalLastRegimeChange := newLastChange
+globalPrevVolatilityRegime := newPrevRegime
+globalRegimeConfidence := newConf
 
 // Enhanced feature calculation
 calculateEnhancedFeaturesLocal() =>
@@ -719,6 +728,7 @@ calculateEnhancedFeaturesLocal() =>
     
     features
 
+// --- Modified calculateEnhancedPredictionScoreLocal (fixed double-sigmoid)
 calculateEnhancedPredictionScoreLocal() =>
     // Get enhanced features
     features = calculateEnhancedFeaturesLocal()
@@ -737,14 +747,11 @@ calculateEnhancedPredictionScoreLocal() =>
     // Normalize score
     normalizedScore = totalWeight > 0 ? score / totalWeight : 0
     
-    // Convert to probability (0-1)
-    probability = 1.0 / (1.0 + math.exp(-normalizedScore * 3.0))
-    
     // Get current regime
     regimeLocal = detectVolatilityRegimeLocal()
     
-    // Apply volatility-adjusted probability
-    probability := calculateVolatilityAdjustedProbabilityLocal(probability, regimeLocal)
+    // Apply volatility-adjusted probability using the raw normalizedScore (PRE-sigmoid)
+    probability := calculateVolatilityAdjustedProbabilityLocal(normalizedScore, regimeLocal)
     
     // Get adaptive thresholds based on regime
     [entryThreshold, exitThreshold] = getVolatilityThresholdsLocal(regimeLocal)
